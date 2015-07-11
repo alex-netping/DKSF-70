@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="uart_get.cgi"></script>
+<style>
+body {min-width:930px;}
+form {max-width:900px;}
+input, select {width:180px;}
+input[type="checkbox"] {width:auto;}
+option {text-align:right;}
+caption {caption-side:bottom;}
+</style>
+<script>
+/*
+// DEBUGGGG 
+devname="Test NetPing RS232";
+data={
+baudrate:38400/1200,
+flags:0x13,
+listen_port:3333,
+ip:'192.168.0.77',
+rx_packet_len:32,
+rx_packet_timeout:100,
+tx_overflows:1
+};
+//
+*/
+function getid(id) {return document.getElementById(id);}
+
+function hexb(b) {if(b<0) b=0; if(b>255) b=255; return (b<16?'0':'')+b.toString(16);}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x,f; // added local f 1.06.14
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+ if(e) throw fld;
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function chk_ip(fld)
+{
+ ip=fld.value; e=false;
+ if(!(/^((\d{1,3})\.){3}(\d{1,3})$/).test(ip)) seterr(fld,true);
+ if(ip=='255.255.255.255') seterr(fld,true); // no broadcast!
+ var e=false;
+ a=ip.split('.'); for(n in a) if(!a[n] || a[n]>255) e=true;
+ seterr(fld,e);
+ return a;
+}
+
+function chkfrm(reboot)
+{
+  d={};
+  try{
+  var f=document.frm;
+  d.uart_usage=f.uart_usage.selectedIndex;
+  //d.ip=chk_ip(f.ip); 
+  d.listen_port=range(f.listen_port,0,65535);
+  d.rx_packet_timeout=range(f.rx_packet_timeout,5,999);
+  d.rx_packet_len=range(f.rx_packet_len,1,512);
+  d.flags=0;
+  ////if(f.use_port.checked) d.flags|=0x01;
+  ////if(f.fixed_ip.checked) d.flags|=0x02;
+  if(f.xceiver) if(f.xceiver.selectedIndex==1) d.flags|=0x10; // use 485
+  switch(f.parity.selectedIndex)
+  {
+  case 1: d.flags|=0x04; break;
+  case 2: d.flags|=0x08; break;
+  }
+  if(f.wordlen.selectedIndex==0) d.flags|=0x40; // 7bit word
+  if(f.stopbits.selectedIndex==2) d.flags|=0x20; // 2 stop bits
+  d.baudrate=f.speed.options[f.speed.selectedIndex].text/1200;
+  }catch(e){return false;}
+  
+  document.sender.data.value=pack(packfmt,d);
+  document.sender.submit();
+  return false;
+}
+
+function fixip() { frm.ip.disabled=!frm.fixed_ip.checked; }
+
+</script>
+</head>
+
+<body>
+<script>
+menu('Serial Port RS232/485');
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm" action="error.html" method="post">
+
+<h2>Usage of Serial Port</h2>
+<table>
+<tr>
+<td class="parname">Serial Port Function</td>
+<td class="parinput">
+<select name="uart_usage">
+<option>DISABLED</option>
+<option disabled="">UDP-COM</option>  
+<option title="Local TCP Server">TCP-COM</option>
+<option disabled="" title="Remote reading for electricity meters Energomera">ENERGOMERA</option>
+<!--<option id="gsm">GSM МОДЕМ</option>-->
+</select>
+</td>
+</tr>
+</table>
+
+<h2>Network-to-Serial Communication Setup</h2>
+<table>
+<!--
+<tr>
+<td class="parname">Разрешить передачу данных через порт</td>
+<td class="parinput"><input type="text" name="use_port" type="checkbox"/></td>
+</tr>
+<tr>
+<td class="parname">Связь порта только с заданным IP</td>
+<td class="parinput"><input type="text" name="fixed_ip" type="checkbox" onclick="fixip()"/></td>
+</tr>
+<tr>
+<td class="parname">IP адрес для связи через COM порт</td>
+<td class="parinput"><input type="text" name="ip"/></td>
+</tr>  
+-->
+<tr>
+<td class="parname">Local TCP Server Port</td>
+<td class="parinput"><input type="text" name="listen_port"/></td>
+</tr>    
+<tr>
+<td class="parname">Amount of Received Serial Data to form next network packet (1..512 byte)</td>
+<td class="parinput"><input type="text" name="rx_packet_len"/></td>
+</tr>   
+<tr>
+<td class="parname">Timeout to form network packet if no new Serial Data (5..999 мс)</td>
+<td class="parinput"><input type="text" name="rx_packet_timeout"/></td>
+</tr>  
+<tr>
+<td class="parname">Buffer Overflow Event Counter</td>
+<td class="parinput"><script>document.write(data.tx_overflows);</script></td>
+</tr>
+</table>
+
+<h2>Serial Port Settings</h2>
+<table>
+<caption class="send_button">
+<input type="button" value="Apply changes" onclick="chkfrm()">
+</caption>
+<script>
+var rssel=
+'<tr>'+
+'<td class="parname">Select Serial Port Xceiver</td>'+
+'<td class="parinput">'+
+'<select disabled="" name="xceiver">'+
+'<option>RS-232</option>'+
+'<option>RS-485</option>'+
+'</select>'+
+'</td>'+
+'</tr>';
+if(data.proj_assm==10 || data.proj_assm==1)
+ document.write(rssel);
+</script>
+<tr>
+<td class="parname">Serial Port Rate, bit/s</td>
+  <td class="parinput"><select name="speed">
+  <option>1200</option>
+  <option>2400</option>
+  <option>4800</option>
+  <option>9600</option>
+  <option>19200</option>
+  <option>38400</option>
+  <option>57600</option>
+  <option>115200</option>
+  </select></td>
+</tr>
+<tr>
+<td class="parname">Word Length, bit</td>
+  <td class="parinput"><select name="wordlen">
+  <option>7</option>
+  <option>8</option>
+  </select></td>
+</tr>  
+<tr>
+<td class="parname">Parity</td>
+  <td class="parinput"><select name="parity">
+  <option>No</option>
+  <option>Odd</option>
+  <option>Even</option>
+  </select></td>
+</tr>  
+<tr>
+<td class="parname">Stop Bits</td>
+  <td class="parinput"><select name="stopbits">
+  <option>1</option>
+  <option disabled="">1.5</option>
+  <option>2</option>
+  </select></td>
+</tr> 
+</table>
+</form>
+
+<script>
+var ff=document.frm;
+//ff.ip.value=data.ip;
+ff.uart_usage.selectedIndex=data.uart_usage;
+ff.listen_port.value=data.listen_port;
+ff.rx_packet_len.value=data.rx_packet_len;
+ff.rx_packet_timeout.value=data.rx_packet_timeout;
+//ff.use_port.checked=data.flags&0x01;
+//ff.fixed_ip.checked=data.flags&0x02;
+//fixip();
+if(ff.xceiver) ff.xceiver.selectedIndex=data.flags&0x10?1:0;
+if(data.flags&0x04) ff.parity.selectedIndex=1;
+if(data.flags&0x08) ff.parity.selectedIndex=2;
+ff.wordlen.selectedIndex=data.flags&0x40?0:1; // 7bit word
+ff.stopbits.selectedIndex=data.flags&0x20?2:0; // 2 stop bits
+for(var i=0;i<ff.speed.length;++i) with(ff.speed.options[i]) if(text==data.baudrate*1200) selected=true;
+</script>
+
+<form name="sender" style="display:none" method="post" action="/uart_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

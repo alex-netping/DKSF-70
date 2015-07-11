@@ -1,0 +1,22 @@
+#define MODULE1  &i2c_struct
+#include "i2c\i2c.h"
+#define MODULE1_INITS  I2C_INITS
+#define MODULE1_EXECS  I2C_EXECS
+#define MODULE1_TIMERS I2C_TIMERS
+#define I2C_MODUL		//Флажок включения модуля
+//#define I2C_DEBUG		//Флажок включения отладки в модуле
+///Определения приоритетов INIT/EXEC
+#define I2C_INIT1_PRI	5
+
+//---- Переопределение внешних связей модуля----------
+//Внешние переменные
+#define I2C_HW_ADDR_DEF 0xa0
+#define I2C_HW_SIZE_DEF 256
+#define I2C_HW_BLOCK_SIZE_DEF 64
+//#define I2C_PIC_BRG 127
+//#define PROC_4620
+
+//Внешние процедуры				
+
+
+

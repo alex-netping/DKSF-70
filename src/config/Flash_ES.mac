@@ -1,0 +1,12 @@
+execUserReset()
+{
+      __writeMemory32(0x00000001, 0x400FC040, "Memory"); // MEMMAP = 1;
+	__writeMemory32(0x00000000, 0xE000ED08, "Memory"); //Vector table remap at 0x00000000
+}
+
+execUserPreload()
+{
+      __writeMemory32(0x00000001, 0x400FC040, "Memory"); // MEMMAP = 1;
+	__writeMemory32(0x00000000, 0xE000ED08, "Memory"); //Vector table remap at 0x00000000
+}
+

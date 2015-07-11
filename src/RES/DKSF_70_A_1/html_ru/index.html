@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<style>
+form {max-width:900px;}
+.dialog {
+position: fixed;
+width: 400px;
+margin-left: -200px;
+height: 200px;
+margin-top: -100px;
+z-index:100;
+border: solid 1px green;
+background-color: white;
+padding:15px;
+left:50%;
+top:50%;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;    
+}
+</style>
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="setup_get.cgi"></script>
+</head>
+<body>
+<script>
+menu('Главная страница');
+
+function getid(id) {return document.getElementById(id);}
+
+function field(nm, val)
+{
+l='<tr><td class="parname">'+nm+'</td>'+
+'<td class="parinput">'+val+'</td></tr>';
+return l;
+}
+
+</script>
+<div id="middle">
+<div id="push_margin" style="height:1px"></div>
+<h2>Информация</h2>
+<form action="/newserial.cgi" method="POST">
+<table>
+<script>
+l='';
+l+=field('Имя устройства',data.hostname);
+l+=field('Местонахождение устройства',data.location);
+l+=field('Контактные данные',data.contact);
+l+=field('Серийный номер', data.serialnum==0xffffffff?'<input type="submit" value="generate&save"/>':data.serial);
+l+=field('MAC адрес',data.mac);
+l+=field('Модель устройства',devname);
+l+=field('Версия ПО',fwver);
+l+=field('Версия железа','1.'+hwver);
+var s=Math.floor(uptime_100ms/10);
+var m=Math.floor(s/60); s=s%60;
+var h=Math.floor(m/60); m=m%60;
+var d=Math.floor(h/24); h=h%24;
+l+=field('Время непрерывной работы', '' + d + 'д ' + h + 'ч ' + m + 'м ' + s + 'с');
+document.write(l);
+</script>
+</table>
+</form>
+
+<h2>Настройки сети</h2>
+<form name="reboot_frm" action="/reboot.cgi" method="POST">
+<table>
+<script>
+l='';
+l+=field('IP адрес',data.ip);
+l+=field('Маска подсети',data.mask);
+l+=field('Шлюз',data.gate);
+document.write(l);
+</script>
+</table>
+<input type="hidden" name="reboot" value="!"/>
+<div style="text-align:right">
+<input class="send_button" type="button" value="Выполнить перезагрузку" onclick="getid('reboot_dlg').style.visibility='visible'"/>
+</div>
+<div class="dialog" id="reboot_dlg">
+<p><span style="color:green;font-weight:bold">ВНИМАНИЕ!</span> Во время перезагрузки прошивки состояние IO линий и реле может кратковременно измениться. 
+Также, состояние IO линий и реле может измениться в результате рестарта модуля логики. 
+Продолжить перезагрузку?
+</p>
+<div style="text-align:right">
+<input class="send_button" type="button" value="Отменить" onclick="getid('reboot_dlg').style.visibility='hidden'" />
+<input class="send_button" type="button" value="Продолжить" onclick="getid('reboot_dlg').style.visibility='hidden'; document.reboot_frm.submit();" />
+</div>
+</div><!--dialog-->
+</form>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

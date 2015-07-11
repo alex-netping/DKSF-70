@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<project>
+  <fileVersion>2</fileVersion>
+  <fileChecksum>927286195</fileChecksum>
+  <configuration>
+    <name>Debug</name>
+    <outputs>
+      <file>$PROJ_DIR$\DEF\led_def.h</file>
+      <file>$PROJ_DIR$\DEF\project_def.h</file>
+      <file>$PROJ_DIR$\platform_setup.h</file>
+      <file>$PROJ_DIR$\FLASH_LPC\flash_lpc.c</file>
+      <file>$PROJ_DIR$\BOOT\main.c</file>
+      <file>$PROJ_DIR$\project.c</file>
+      <file>$TOOLKIT_DIR$\lib\shb_l.a</file>
+      <file>$PROJ_DIR$\DEF\ntp_def.h</file>
+      <file>$PROJ_DIR$\LOGIC2\logic.h</file>
+      <file>$PROJ_DIR$\DEF\hw_i2c_def.h</file>
+      <file>$PROJ_DIR$\UDP\udp.h</file>
+      <file>$PROJ_DIR$\DEF\io_def.h</file>
+      <file>$PROJ_DIR$\NTP\ntp.h</file>
+      <file>$PROJ_DIR$\IR2\ir.h</file>
+      <file>$PROJ_DIR$\DEF\http2_def.h</file>
+      <file>$PROJ_DIR$\DEF\ip_def.h</file>
+      <file>$PROJ_DIR$\DEF\notify_def.h</file>
+      <file>$PROJ_DIR$\DEF\icmp_def.h</file>
+      <file>$PROJ_DIR$\DEF\flash_lpc_def.h</file>
+      <file>$PROJ_DIR$\MAC236X\mac236x.h</file>
+      <file>$PROJ_DIR$\DEF\ping_def.h</file>
+      <file>$PROJ_DIR$\DEF\spi_eeprom_def.h</file>
+      <file>$PROJ_DIR$\DEF\tcp_def.h</file>
+      <file>$PROJ_DIR$\RELHUM\relhum2.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Product.h</file>
+      <file>$PROJ_DIR$\config\bootloader.icf</file>
+      <file>$PROJ_DIR$\DNS\dns.h</file>
+      <file>$PROJ_DIR$\DEF\logic_def.h</file>
+      <file>$PROJ_DIR$\bootlink.h</file>
+      <file>$PROJ_DIR$\DEF\ir2_def.h</file>
+      <file>$PROJ_DIR$\NIC\nic.h</file>
+      <file>$PROJ_DIR$\DEF\udp_def.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\string.h</file>
+      <file>$PROJ_DIR$\NOTIFY\notify.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Exe\dksf70_bootloader.hex</file>
+      <file>$PROJ_DIR$\DEF\nic_def.h</file>
+      <file>$PROJ_DIR$\spi_eeprom\spi_eeprom.h</file>
+      <file>$PROJ_DIR$\IO2\io.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\main.o</file>
+      <file>$PROJ_DIR$\system_event.h</file>
+      <file>$PROJ_DIR$\project.h</file>
+      <file>$PROJ_DIR$\OW\ow.h</file>
+      <file>$PROJ_DIR$\ICMP\icmp.h</file>
+      <file>$PROJ_DIR$\DEF\relay_uniping_def.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\ysizet.h</file>
+      <file>$PROJ_DIR$\DELAY\delay.h</file>
+      <file>$PROJ_DIR$\DEF\phy_def.h</file>
+      <file>$PROJ_DIR$\DEF\termo_def.h</file>
+      <file>$PROJ_DIR$\SNMP\snmp.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Threads.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\project.o</file>
+      <file>$PROJ_DIR$\LOG\LOG.h</file>
+      <file>$PROJ_DIR$\DEF\dns_def.h</file>
+      <file>$PROJ_DIR$\LED\led.h</file>
+      <file>$PROJ_DIR$\HW_I2C\hw_i2c.h</file>
+      <file>$PROJ_DIR$\DEF\LOG_def.h</file>
+      <file>$TOOLKIT_DIR$\lib\rt7M_tl.a</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\flash_lpc.pbi</file>
+      <file>$TOOLKIT_DIR$\inc\NXP\iolpc1778.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Product_string.h</file>
+      <file>$PROJ_DIR$\SENDMAIL\sendmail.h</file>
+      <file>$PROJ_DIR$\IP\ip3.h</file>
+      <file>$PROJ_DIR$\CRC\crc.h</file>
+      <file>$PROJ_DIR$\SW_I2C\sw_i2c.h</file>
+      <file>$PROJ_DIR$\DEF\rtc_def.h</file>
+      <file>$PROJ_DIR$\DEF\relhum_def.h</file>
+      <file>$PROJ_DIR$\TCP\tcp.h</file>
+      <file>$PROJ_DIR$\DEF\mac236x_def.h</file>
+      <file>$PROJ_DIR$\RTC\rtc.h</file>
+      <file>$PROJ_DIR$\TERMO\termo.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\io_macros.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Defaults.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\ycheck.h</file>
+      <file>$PROJ_DIR$\RELAY\relay_uniping.h</file>
+      <file>$PROJ_DIR$\DEF\cur_det_def.h</file>
+      <file>$PROJ_DIR$\flash_lpc\flash_lpc.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\yvals.h</file>
+      <file>$PROJ_DIR$\DEF\ow_def.h</file>
+      <file>$TOOLKIT_DIR$\lib\m7M_tl.a</file>
+      <file>$PROJ_DIR$\STR\str2.h</file>
+      <file>$PROJ_DIR$\sys.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\flash_lpc.o</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\main.pbi</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\project.pbi</file>
+      <file>$PROJ_DIR$\DEF\sendmail_def.h</file>
+      <file>$PROJ_DIR$\HTTP2\http2.h</file>
+      <file>$PROJ_DIR$\DEF\snmp_setter_def.h</file>
+      <file>$PROJ_DIR$\DEF\crc_def.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\intrinsics.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Obj\bootloader.pbd</file>
+      <file>$PROJ_DIR$\DEF\sw_i2c_def.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\List\project.i</file>
+      <file>$PROJ_DIR$\PHY\phy_ksz8863.h</file>
+      <file>$PROJ_DIR$\DEF\delay_def.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\DLib_Config_Normal.h</file>
+      <file>$PROJ_DIR$\CUR_DET\cur_det.h</file>
+      <file>$TOOLKIT_DIR$\inc\c\xencoding_limits.h</file>
+      <file>$TOOLKIT_DIR$\lib\dl7M_tln.a</file>
+      <file>$PROJ_DIR$\snmp_setter\snmp_setter.h</file>
+      <file>$PROJ_DIR$\DEF\snmp_def.h</file>
+      <file>$PROJ_DIR$\DEF\sys_def.h</file>
+      <file>$PROJ_DIR$\PING\ping.h</file>
+      <file>$PROJ_DIR$\Bootloader_Debug\Exe\c.out</file>
+      <file>$PROJ_DIR$\WTIMER\wtimer.h</file>
+      <file>$PROJ_DIR$\DEF\wtimer_def.h</file>
+      <file>$PROJ_DIR$\WATCHDOG\watchdog.h</file>
+      <file>$PROJ_DIR$\DEF\watchdog_def.h</file>
+    </outputs>
+    <file>
+      <name>$PROJ_DIR$\FLASH_LPC\flash_lpc.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 57</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 81</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 2 32 72 76 71 94 24 96 49 44 59 88 58 70 39 0 53 1 40 100 80 93 45 18 75 21 36 87 62 67 19 35 30 46 92 15 61 17 42 20 101 31 10 99 48 22 66 52 26 14 85 7 12 64 68 55 51 79 43 73 106 105 104 103 11 37 9 54 90 63 77 41 65 23 47 69 29 13 27 8 86 98 74 95 16 33 84 60</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 2 32 72 76 71 94 24 96 49 44 59 88 58 70 39 0 53 1 40 100 80 93 45 18 75 21 36 87 62 67 19 35 30 46 92 15 61 17 42 20 101 31 10 99 48 22 66 52 26 14 85 7 12 64 68 55 51 79 43 73 106 105 104 103 11 37 9 54 90 63 77 41 65 23 47 69 29 13 27 8 86 98 74 95 16 33 84 60</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\BOOT\main.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 82</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 38</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 2 32 72 76 71 94 24 96 49 44 59 88 58 70 39 0 53 1 40 100 80 93 45 18 75 21 36 87 62 67 19 35 30 46 92 15 61 17 42 20 101 31 10 99 48 22 66 52 26 14 85 7 12 64 68 55 51 79 43 73 106 105 104 103 11 37 9 54 90 63 77 41 65 23 47 69 29 13 27 8 86 98 74 95 16 33 84 60 28</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 2 32 72 76 71 94 24 96 49 44 59 88 58 70 39 0 53 1 40 100 80 93 45 18 75 21 36 87 62 67 19 35 30 46 92 15 61 17 42 20 101 31 10 99 48 22 66 52 26 14 85 7 12 64 68 55 51 79 43 73 106 105 104 103 11 37 9 54 90 63 77 41 65 23 47 69 29 13 27 8 86 98 74 95 16 33 84 60 28</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\project.c</name>
+      <outputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 83</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 91 50</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>BICOMP</name>
+          <file> 2 32 72 76 71 94 24 96 49 44 59 88 58 70 39 0 53 1 40 100 80 93 45 18 75 21 36 87 62 67 19 35 30 46 92 15 61 17 42 20 101 31 10 99 48 22 66 52 26 14 85 7 12 64 68 55 51 79 43 73 106 105 104 103 11 37 9 54 90 63 77 41 65 23 47 69 29 13 27 8 86 98 74 95 16 33 84 60</file>
+        </tool>
+        <tool>
+          <name>ICCARM</name>
+          <file> 2 32 72 76 71 94 24 96 49 44 59 88 58 70 39 0 53 1 40 100 80 93 45 18 75 21 36 87 62 67 19 35 30 46 92 15 61 17 42 20 101 31 10 99 48 22 66 52 26 14 85 7 12 64 68 55 51 79 43 73 106 105 104 103 11 37 9 54 90 63 77 41 65 23 47 69 29 13 27 8 86 98 74 95 16 33 84 60</file>
+        </tool>
+      </inputs>
+    </file>
+    <file>
+      <name>[ROOT_NODE]</name>
+      <outputs>
+        <tool>
+          <name>ILINK</name>
+          <file> 102</file>
+        </tool>
+      </outputs>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\Bootloader_Debug\Exe\c.out</name>
+      <outputs>
+        <tool>
+          <name>OBJCOPY</name>
+          <file> 34</file>
+        </tool>
+      </outputs>
+      <inputs>
+        <tool>
+          <name>ILINK</name>
+          <file> 25 81 38 50 6 56 78 97</file>
+        </tool>
+      </inputs>
+    </file>
+  </configuration>
+  <configuration>
+    <name>Release</name>
+    <outputs/>
+    <forcedrebuild>
+      <name>[MULTI_TOOL]</name>
+      <tool>ILINK</tool>
+    </forcedrebuild>
+  </configuration>
+</project>
+
+

@@ -1,0 +1,22 @@
+#define MODULE0  &tcn75a_struct
+
+#define MODULE0_INITS  TCN75A_INITS
+#define MODULE0_EXECS  TCN75A_EXECS
+#define MODULE0_TIMERS TCN75A_TIMERS
+#define TCN75A_MODUL		//Флажок включения модуля
+//#define TCN75A_DEBUG		//Флажок включения отладки в модуле
+///Определения приоритетов INIT/EXEC
+#define TCN75A_INIT1_PRI	        15
+#define TCN75A_EXEC1_PRI	        5
+#define TCN75A_TIMER1_PRI	        3
+//---- Переопределение внешних связей модуля---------
+///Кол-во датчиков TCN75A
+#define TCN75_DET_MAX 8
+
+/*! Процедура чтения поправок к измеренной температуре
+\param det - номер датчика
+\param coef - значение поправки
+*/
+#define TCN75A_READ_COEF(det,coef)
+
+#include "tcn75a\tcn75a.h"

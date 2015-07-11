@@ -1,0 +1,180 @@
+#include "platform_setup.h"
+#ifdef UDP_MODUL
+
+#ifndef UDP_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+	#undef DEBUG_INPUT_PARAM
+        #undef DEBUG_OUTPUT_PARAM
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+	#define DEBUG_INPUT_PARAM(msg,val)	
+        #define DEBUG_OUTPUT_PARAM(msg,val)	
+#endif
+
+//Описание процедур модуля
+const struct exec_queue_rec udp_init_table[]={(upointer)udp_init,UDP_INIT1_PRI|LAST_REC};
+const struct module_rec udp_struct={(upointer)udp_init_table, NULL, NULL};
+
+struct udp_header udp_rx_head;
+struct udp_header udp_tx_head;
+upointer udp_rx_body_pointer,udp_tx_body_pointer;
+unsigned char udp_buf[200]={0};
+
+void udp_init(void)
+{
+  DEBUG_PROC_START("udp_init");
+  udp_rx_body_pointer = 0;
+  udp_tx_body_pointer = 0;
+  DEBUG_PROC_END("udp_init");
+}
+
+void udp_exec(void)
+{
+  DEBUG_PROC_START("udp_exec");
+  
+  if (_IP_HEAD_RX.protocol == UDP_PROT) 
+  { 
+    udp_get_rx_header();
+    UDP_PARSING;
+  }
+  DEBUG_PROC_END("udp_exec");
+}
+
+uword udp_create_packet(void)
+{
+  uword pack=0;
+  DEBUG_PROC_START("udp_create_packet");
+  pack = _IP_CREATE_PACKET;
+  if(pack != 0xff)
+  {
+    _IP_HEAD_TX.protocol = UDP_PROT;
+    util_fill((unsigned char*)&udp_tx_head, sizeof(struct udp_header),0);
+    udp_put_tx_header(pack);
+    _IP_PUT_TX_HEADER(pack);
+  }
+  DEBUG_PROC_END("udp_create_packet");
+  DEBUG_OUTPUT_PARAM(":%u", pack);
+  return pack;
+}
+
+void udp_send_packet(uword packet_id,unsigned short len)
+{
+  unsigned int crc=0, t_len;
+  unsigned char header[12];
+  DEBUG_PROC_START("udp_send_packet");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id); 
+  DEBUG_INPUT_PARAM("len:%u", len);
+  CRC16=0;
+  len+=sizeof(struct udp_header);
+  udp_get_tx_header(packet_id);
+  udp_tx_head.CRC[0] = 0;
+  udp_tx_head.CRC[1] = 0;
+  udp_tx_head.len[0] = (unsigned char)(len>>8);
+  udp_tx_head.len[1] = (unsigned char)len;
+  _IP_GET_TX_HEADER(packet_id);
+  util_cpy(_IP_HEAD_TX.src_ip, header,4);
+  util_cpy(_IP_HEAD_TX.dest_ip, &header[4],4);
+  util_cpy(udp_tx_head.len, &header[10],2);
+  header[8]=0;
+  header[9]= UDP_PROT; 
+  UDP_CALC_CRC(header, 12);
+  UDP_CALC_CRC((unsigned char*)&udp_tx_head, sizeof(struct udp_header));
+  t_len = len-sizeof(struct udp_header);
+  udp_tx_body_pointer = 0;
+  while(t_len > 200)
+  {
+    udp_get_tx_body(packet_id, udp_buf, 200);
+    UDP_CALC_CRC(udp_buf, 200);
+    t_len -= 200;
+  }
+  if(t_len)
+  {
+    udp_get_tx_body(packet_id, udp_buf, t_len);
+    UDP_CALC_CRC(udp_buf, t_len);
+  }
+  crc = UDP_GET_CRC;
+  udp_tx_head.CRC[0] = (crc & 0xff);
+  udp_tx_head.CRC[1] = (crc >> 8);
+  udp_put_tx_header(packet_id);
+  _IP_SEND_PACKET(packet_id,len,1);
+  DEBUG_PROC_END("udp_send_packet");
+}
+
+void udp_get_rx_header(void)
+{
+  DEBUG_PROC_START("udp_get_rx_header");
+  _IP_SET_RX_BODY_ADDR(0);
+  _IP_GET_RX_BODY((unsigned char*)&udp_rx_head, sizeof(struct udp_header));
+  DEBUG_PROC_END("udp_get_rx_header");
+}
+
+void udp_get_tx_header(uword packet_id)
+{
+  DEBUG_PROC_START("udp_get_tx_header");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  _IP_SET_TX_BODY_ADDR(0);
+  _IP_GET_TX_BODY(packet_id, (unsigned char *)&udp_tx_head, sizeof(struct udp_header));
+  DEBUG_PROC_END("udp_get_tx_header");
+}
+
+void udp_put_tx_header(uword packet_id)
+{
+  DEBUG_PROC_START("udp_put_tx_header");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  _IP_SET_TX_BODY_ADDR(0);
+  _IP_PUT_TX_BODY(packet_id, (unsigned char *)&udp_tx_head, sizeof(struct udp_header));
+  DEBUG_PROC_END("udp_put_tx_header");
+}
+
+void udp_get_rx_body(unsigned char *buf,uword len)
+{
+  DEBUG_PROC_START("udp_get_rx_body");
+  DEBUG_INPUT_PARAM("*buf:%x",(upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  _IP_SET_RX_BODY_ADDR(udp_rx_body_pointer + sizeof(struct udp_header));
+  _IP_GET_RX_BODY(buf, len);
+  udp_rx_body_pointer += len;
+  DEBUG_PROC_END("udp_get_rx_body");
+}
+
+void udp_get_tx_body(uword packet_id,unsigned char *buf,uword len)
+{
+  DEBUG_PROC_START("udp_get_tx_body");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf); 
+  DEBUG_INPUT_PARAM("len:%u", len);
+  _IP_SET_TX_BODY_ADDR(udp_tx_body_pointer + sizeof(struct udp_header));
+  _IP_GET_TX_BODY(packet_id, buf, len);
+  udp_tx_body_pointer += len;
+  DEBUG_PROC_END("udp_get_tx_body");
+}
+
+void udp_put_tx_body(uword packet_id,unsigned char *buf,uword len)
+{
+  DEBUG_PROC_START("udp_put_tx_body");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf); 
+  DEBUG_INPUT_PARAM("len:%u", len);
+  _IP_SET_TX_BODY_ADDR(udp_tx_body_pointer + sizeof(struct udp_header));
+  _IP_PUT_TX_BODY(packet_id, buf, len);
+  udp_tx_body_pointer += len;
+  DEBUG_PROC_END("udp_put_tx_body");
+}
+
+
+
+
+
+
+
+#endif
+
+
+

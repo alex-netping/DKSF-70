@@ -1,0 +1,212 @@
+#include "platform_setup.h"
+
+
+#ifdef ICMP_MODUL
+
+#ifndef ICMP_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+        #undef DEBUG_INPUT_PARAM
+        #undef DEBUG_OUTPUT_PARAM	
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+        #define DEBUG_INPUT_PARAM(msg,val)	
+        #define DEBUG_OUTPUT_PARAM(msg,val)	
+	
+#endif
+
+//Описание констант модуля
+const struct exec_queue_rec icmp_init_table[]={{(upointer)icmp_init,ICMP_INIT1_PRI|LAST_REC}};
+const struct module_rec icmp_struct={(upointer)icmp_init_table, NULL, NULL};
+
+//Описание переменных модуля
+struct icmp_header icmp_rx_head;
+struct icmp_header icmp_tx_head;
+upointer icmp_rx_body_pointer;
+upointer icmp_tx_body_pointer;
+unsigned char c_buf[200]={0};
+
+//Описание процедур модуля
+void icmp_init(void)
+{
+  DEBUG_PROC_START("icmp_init"); 
+  icmp_rx_body_pointer = 0;
+  icmp_tx_body_pointer = 0;
+  DEBUG_PROC_END("icmp_init");  
+}
+
+void icmp_exec(void)
+{
+  DEBUG_PROC_START("icmp_exec"); 
+  if (_IP_HEAD_RX.protocol == ICMP_PROT) 
+  { 
+    icmp_get_rx_header();
+    if(icmp_rx_head.type == ICMP_ECHO) 
+    { 
+      icmp_echo_reply();
+      DEBUG_PROC_END("icmp_exec");  
+      return;
+    }
+    if((icmp_rx_head.type == ICMP_ECHO_REPLY)||(icmp_rx_head.type == ICMP_TTL_EXCEED)) 
+    { 
+      ICMP_PARSING;
+      DEBUG_PROC_END("icmp_exec");  
+      return;
+    }
+  }
+  DEBUG_PROC_END("icmp_exec");  
+}
+
+uword icmp_create_packet(void)
+{
+  uword data=0;
+  DEBUG_PROC_START("icmp_create_packet"); 
+  data = _IP_CREATE_PACKET;
+  if(data != 0xff)
+  {
+    _IP_HEAD_TX.protocol = ICMP_PROT;
+    util_fill((unsigned char *)&icmp_tx_head, sizeof(struct icmp_header), 0);
+    icmp_put_tx_header(data);
+    _IP_PUT_TX_HEADER(data);
+  }
+  DEBUG_OUTPUT_PARAM(":%x", data);
+  DEBUG_PROC_END("icmp_create_packet");  
+  return data;
+}
+
+void icmp_send_packet(uword packet_id, unsigned short len)
+{
+  unsigned int crc=0, t_len;
+  DEBUG_PROC_START("icmp_send_packet"); 
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  icmp_get_tx_header(packet_id);
+  icmp_tx_head.CRC[0] = 0;
+  icmp_tx_head.CRC[1] = 0;
+  CRC16=0;
+  ICMP_CALC_CRC(((unsigned char*)&icmp_tx_head), sizeof(struct icmp_header));
+  t_len = len-sizeof(struct icmp_header);
+  icmp_tx_body_pointer = 0;
+  while(t_len > 200)
+  {
+    icmp_get_tx_body(packet_id, c_buf, 200);
+    ICMP_CALC_CRC(c_buf, 200);
+    t_len -= 200;
+  }
+  if(t_len)
+  {
+    icmp_get_tx_body(packet_id, c_buf, t_len);
+    ICMP_CALC_CRC(c_buf, t_len);
+  }
+  crc = ICMP_GET_CRC;
+  icmp_tx_head.CRC[0] = (crc & 0xff);
+  icmp_tx_head.CRC[1] = (crc >> 8);
+  icmp_put_tx_header(packet_id);
+  _IP_SEND_PACKET(packet_id, len, 1);
+  DEBUG_PROC_END("icmp_send_packet");  
+}
+
+void icmp_get_rx_header(void)
+{
+  DEBUG_PROC_START("icmp_get_rx_header"); 
+  _IP_SET_RX_BODY_ADDR(0);
+  _IP_GET_RX_BODY((unsigned char *)&icmp_rx_head, sizeof(struct icmp_header));
+  DEBUG_PROC_END("icmp_get_rx_header");  
+}
+
+void icmp_get_tx_header(uword packet_id)
+{
+  DEBUG_PROC_START("icmp_get_tx_header"); 
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  _IP_SET_TX_BODY_ADDR(0);
+  _IP_GET_TX_BODY(packet_id, (unsigned char *)&icmp_tx_head, sizeof(struct icmp_header));
+  DEBUG_PROC_END("icmp_get_tx_header");  
+}
+
+void icmp_put_tx_header(uword packet_id)
+{
+  DEBUG_PROC_START("icmp_put_tx_header"); 
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  _IP_SET_TX_BODY_ADDR(0);
+  _IP_PUT_TX_BODY(packet_id, (unsigned char *)&icmp_tx_head, sizeof(struct icmp_header));
+  DEBUG_PROC_END("icmp_put_tx_header");  
+}
+
+void icmp_get_rx_body(unsigned char *buf, uword len)
+{
+  DEBUG_PROC_START("icmp_get_rx_body"); 
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  _IP_SET_RX_BODY_ADDR(icmp_rx_body_pointer + sizeof(struct icmp_header));
+  _IP_GET_RX_BODY(buf, len);
+  icmp_rx_body_pointer += len;
+  DEBUG_PROC_END("icmp_get_rx_body");  
+}
+
+void icmp_get_tx_body(uword packet_id,unsigned char *buf, uword len)
+{
+  DEBUG_PROC_START("icmp_get_tx_body"); 
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  _IP_SET_TX_BODY_ADDR(icmp_tx_body_pointer + sizeof(struct icmp_header));
+  _IP_GET_TX_BODY(packet_id, buf, len);
+  icmp_tx_body_pointer += len;
+  DEBUG_PROC_END("icmp_get_tx_body");  
+}
+
+void icmp_put_tx_body(uword packet_id,unsigned char *buf, uword len)
+{
+  DEBUG_PROC_START("icmp_put_tx_body"); 
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  _IP_SET_TX_BODY_ADDR(icmp_tx_body_pointer + sizeof(struct icmp_header));
+  _IP_PUT_TX_BODY(packet_id, buf, len);
+  icmp_tx_body_pointer += len;
+  DEBUG_PROC_END("icmp_put_tx_body");  
+}
+
+
+void icmp_echo_reply(void)
+{
+  uword pack=0;
+  unsigned short len=0, t_len=0;
+  DEBUG_PROC_START("icmp_echo_reply"); 
+  pack = icmp_create_packet();
+  icmp_get_tx_header(pack);
+  icmp_tx_head.type = ICMP_ECHO_REPLY;
+  util_cpy(_IP_HEAD_RX.src_ip, _IP_HEAD_TX.dest_ip,4);
+  util_cpy(_IP_HEAD_RX.dest_ip, _IP_HEAD_TX.src_ip,4);
+  util_cpy(icmp_rx_head.id, icmp_tx_head.id, 2);
+  util_cpy(icmp_rx_head.seq, icmp_tx_head.seq, 2);
+  len = (((unsigned short)(_IP_HEAD_RX.total_lenght[0])<<8)+_IP_HEAD_RX.total_lenght[1])-sizeof(struct ip_header);
+  t_len = len-sizeof(struct icmp_header);
+  nic_rx_body_pointer = 0;
+  icmp_tx_body_pointer = 0;
+  icmp_rx_body_pointer = 0;
+  
+  while(t_len > 200)
+  {
+    icmp_get_rx_body(c_buf, 200);
+    icmp_put_tx_body(pack, c_buf, 200);
+    t_len -= 200;
+  }
+  if(t_len)
+  {
+    icmp_get_rx_body(c_buf, t_len);
+    icmp_put_tx_body(pack, c_buf, t_len);
+  }
+  icmp_put_tx_header(pack);
+  _IP_PUT_TX_HEADER(pack);
+  icmp_send_packet(pack, len);
+  DEBUG_PROC_END("icmp_echo_reply");  
+}
+
+#endif

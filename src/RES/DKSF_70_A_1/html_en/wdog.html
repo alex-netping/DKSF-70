@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="wdog_get.cgi"></script>
+<style>
+body {min-width:1000px;}
+form {max-width:900px;}
+th,td {border-top:none;}
+select {width:190px;}
+input {width:190px;}
+input[type="radio"],input[type="checkbox"] {width:auto;}
+caption {text-align:right;caption-side:bottom;}
+</style>
+
+<script>
+/*
+////////// DEBUGGGGG
+var devname="Test NetPing /PWR220v2";
+var fwver='52.99.99.A-9';
+var hwmodel=52;
+var sys_name="example",sys_location="";
+var packfmt={name:{offs:0,len:32},ip0:{offs:32,len:4},ip1:{offs:36,len:4},ip2:{offs:40,len:4},poll_period:{offs:44,len:2},retry_period:{offs:46,len:2},ping_timeout:{offs:48,len:2},reset_time:{offs:50,len:2},reboot_pause:{offs:52,len:2},max_retry:{offs:54,len:1},doubling_pause_resets:{offs:55,len:1},reset_mode:{offs:56,len:1},active:{offs:57,len:1},logic_mode:{offs:58,len:1},manual:{offs:59,len:1},__len:60};
+var data=[{name:"slgkflskdfgl dlfkglk slkldfkglk",ip0:'0.0.0.0',ip1:'0.0.0.0',ip2:'0.0.0.0',poll_period:10,retry_period:1000,ping_timeout:750,reset_time:4,reboot_pause:15,max_retry:8,doubling_pause_resets:0,reset_mode:0,active:0,logic_mode:1,manual:1,reset_count:0},
+{name:"bbb",ip0:'10.0.0.1',ip1:'10.0.0.2',ip2:'10.0.0.3',poll_period:10,retry_period:1000,ping_timeout:750,reset_time:4,reboot_pause:15,max_retry:8,doubling_pause_resets:0,reset_mode:0,active:7,logic_mode:2,manual:1,reset_count:0}
+];
+//////
+*/
+var labels = {
+name:"Memo (up to 30 chars)",
+active:"Polling of Address A,B,C",
+ip0:"Address A",
+ip1:"Address B",
+ip2:"Address C",
+reset_count:"Reset Counter (cleared on firmware reboot)",
+poll_period:"Ping Polling Period, s (10-300)",
+ping_timeout:"Ping Timeout, ms (600-9000)",
+max_retry:"Max Ping Repeats after Timeout",
+reset_time:"Reset Duration, s (1-900)",
+reboot_pause:"Ping Polling Pause After Reset, s (1-3600)",
+doubling_pause_resets:"Limit Number of Reset Retries (0 off, 1-255)",
+reset_mode:"Reset Polarity",
+logic_mode:"Reset Condition Logic",
+forced_reset:"Reset Testing"
+};
+
+var reset_mode_label=[
+'Switch Relay Off',
+'Switch Relay On'
+];
+
+var logic_mode_label=[
+'No reply from any of Address A,B,C',
+'No reply from all of Address A,B,C',
+'No reply from Address А and from one of B,C',
+'No reply from Address А, but B or C replies'
+];
+
+var txt = {
+param:"Parameter",
+chan:"Channel",
+in_manual_mode:"w-dog is detached from relay"
+};
+</script>
+
+</head>
+<body>
+
+<script>
+menu('Watchdog');
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(b) {if(b<0) b=0; if(b>255) b=255; return (b<16?'0':'')+b.toString(16);}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e) //v3
+{
+ fld.style.backgroundColor=e?"#ffaaaa":""; // v3 retain default BG
+ if(e) throw fld;
+}
+
+function range(fn,a,b)
+{
+ var f,v;
+ for(var n in data)
+ {
+  f=document.frm[fn+n];
+  v=parseInt(f.value,10);
+  seterr(f, v!=f.value||isNaN(v)||v<a||v>b);
+  data[n][fn]=v;
+ }
+}
+
+function chkip(fn)
+{
+ var f,v;
+ for(var n in data)
+ {
+  f=document.frm[fn+n];
+  v=f.value;
+  seterr(f,!(/^((\d{1,3})\.){3}(\d{1,3})$/).test(v)); 
+  v=v.split('.');
+  seterr(f,v[0]>223);
+  data[n][fn]=v;
+ }
+}
+
+function chk_hn(fld)
+{
+ var a=fld.value;
+ a = a.replace(/^\s+|\s+$/g,''); // trim sp
+ if(a=='') 
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:''};
+ }
+ if((/^((\d{1,3})\.){3}(\d{1,3})$/).test(a))
+ {
+  var ipa=a.split('.'); 
+  for(n in ipa)
+  {
+   ipa[n] = parseInt(ipa[n]);
+   if(ipa[n]>255) 
+   {
+    seterr(fld_hn,1);
+    throw fld;
+   }    
+  }
+  seterr(fld,0);
+  return {ip:ipa,hn:a};
+ }
+ else
+ if((/^(?=.{1,62}$)([a-z0-9]+(-[a-z0-9]+)*)(\.[a-z0-9]+(-[a-z0-9]+)*)*$/i).test(a)) //domain name up to 62 chars, may be multi-label or just 1 label
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:a};
+ }
+ seterr(fld,1);
+ throw fld;
+}
+
+function chkfrm()
+{
+ var n,m;
+ try {
+  //chkip('ip0'); 
+  //chkip('ip1');
+  //chkip('ip2');
+  range('poll_period',10,900);
+  range('ping_timeout',600,9000);
+  range('max_retry',1,1000);
+  range('reset_time',1,900);
+  range('reboot_pause',1,3600);
+  range('doubling_pause_resets',0,255);
+ } catch(e) { return;}
+ var d='',f,q;
+ for(n in data)
+ {
+  q=chk_hn(document.frm['ip0'+n]); data[n].ip0=q.ip; data[n].hostname0=q.hn;
+  q=chk_hn(document.frm['ip1'+n]); data[n].ip1=q.ip; data[n].hostname1=q.hn;
+  q=chk_hn(document.frm['ip2'+n]); data[n].ip2=q.ip; data[n].hostname2=q.hn;
+  data[n].name=document.frm['name'+n].value;
+  data[n].active&=~7; for(m=0;m<3;++m) if(document.frm['_active'+n+'_'+m].checked && document.frm[('ip'+m)+n].value) data[n].active|=1<<m;
+  data[n].reset_mode=document.frm['_reset_mode'+n].selectedIndex;
+  for(m=0;m<logic_mode_label.length;++m) if(getid('_lm'+n+'_'+m).checked) break;
+  data[n].logic_mode=m;
+  d+=pack(packfmt,data[n]);
+ }
+ document.sender.data.value=d;
+ document.sender.submit();
+}
+
+var req = new XMLHttpRequest();
+function send_forced_reset(ch)
+{
+ req.abort();
+ req.open("POST","/pwr_reset.cgi",true);
+ req.send('data='+hexb(ch));
+}
+
+</script>
+<div id="middle">
+<div id="push_margin"></div>
+<form name="frm" method="post" action="error.html" onsubmit="function(){return 0;}">
+<table>
+<caption class="send_button_container">
+<input type="button" value="Apply changes" onclick="chkfrm()"/>
+</caption>
+<script>
+var i,l,n,m;
+
+function lbl(nm) { return '<tr><td class="parname">'+labels[nm]+'</td>';}
+
+function trf(nm,aux) 
+{
+if(!aux) aux='';
+ var s='';
+ for(var j in data) s+='<td class="parinput"><input type="text" name="'+nm+j+'" maxlength="62" '+aux+' value="'+data[j][nm]+'"/></td>';
+ return lbl(nm)+s+'</tr>';
+}
+
+function hn_input(fn_ip, fn_hn)
+{
+ var d,l=lbl(fn_ip);
+ for(ch in data)  
+ {
+  d=data[ch][fn_hn];
+  if(!d) d=data[ch][fn_ip];
+  if(d=='0.0.0.0') d='';
+  l+='<td class="parinput">';
+  l+='<input type="text" name="'+fn_ip+ch+'" value="'+d+'" maxlength="62"/>';
+  l+='</td>';
+ }
+ return l+'</tr>';
+}
+
+l='';
+
+l+='<tr><th class="parname">'+txt.param+'</th>';
+var mtxt='<br/><span class="wdttxt" style="color: #01a85b">'+txt.in_manual_mode+'</span>'
+for(n=0;n<data.length;++n) l+='<th class="parinput">'+txt.chan+' '+(n+1)+((data[n].manual==2||data[n].manual==4)?'':mtxt)+'</th>';
+/*for(n=0;n<data.length;++n) l+='<th class="parinput">'+txt.chan+' '+(n+1)+'</th>';*/
+l+='</tr>';
+
+l+=trf('name','disabled="" style="color:#009020"'); // edit via relays page
+
+l+=lbl('active');
+for(n in data)
+{
+ l+='<td class="parinput">';
+ l+=      'A<input name="_active'+n+'_0" type="checkbox"/>';
+ l+='&nbsp;B<input name="_active'+n+'_1" type="checkbox"/>';
+ l+='&nbsp;C<input name="_active'+n+'_2" type="checkbox"/>';
+ l+='</td>';
+}
+l+='</tr>';
+
+//l+=trf('ip0')+trf('ip1')+trf('ip2');
+l+=hn_input('ip0','hostname0');
+l+=hn_input('ip1','hostname1');
+l+=hn_input('ip2','hostname2');
+
+l+=lbl('reset_count');
+for(n in data) l+='<td class="parinput">'+data[n].reset_count+'</td>';
+l+='</tr>';
+
+l+=trf('poll_period');
+l+=trf('ping_timeout');
+l+=trf('max_retry');
+l+=trf('reset_time');
+l+=trf('reboot_pause');
+l+=trf('doubling_pause_resets');
+
+l+=lbl('reset_mode');
+for(n in data) 
+{
+ l+='<td class="parinput"><select name="_reset_mode'+n+'">';
+ for(m in reset_mode_label) l+='<option>'+reset_mode_label[m]+'</option>';
+ l+='</select></td>';
+}
+l+='</tr>';
+
+i='logic_mode';
+l+='<tr><td class="parname" colspan="3">'+labels[i]+'</td></tr>';
+for(var m in logic_mode_label)
+{
+ l+='<tr><td class="parsel">'+logic_mode_label[m]+'</td>';
+ for(n in data) l+='<td class="parinput"><input type="radio" id="_lm'+n+'_'+m+'" name="_logic_mode'+n+'"/></td>';
+ l+='</tr>';
+}
+
+/*
+l+=lbl('forced_reset');
+for(n in data)
+{
+ l+='<td class="parinput"><input type="button" onclick="send_forced_reset('+n+')" value="Тест"/></td>';
+}
+*/
+
+l+='</tr>';
+
+document.write(l);
+
+var f;
+for(n in data) 
+{
+ for(m=0;m<3;++m) document.frm['_active'+n+'_'+m].checked=data[n].active&(1<<m);
+ document.frm['_reset_mode'+n].selectedIndex=data[n].reset_mode;
+ f=getid('_lm'+n+'_'+data[n].logic_mode); if(f) f.checked=1;
+}
+
+</script>
+</table>
+</form>
+
+<form name="sender" style="display:none" method="post" action="wdog_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

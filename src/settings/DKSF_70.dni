@@ -1,0 +1,194 @@
+[Stack]
+FillEnabled=0
+OverflowWarningsEnabled=1
+WarningThreshold=90
+SpWarningsEnabled=1
+WarnLogOnly=1
+UseTrigger=1
+TriggerName=main
+LimitSize=0
+ByteLimit=50
+[DebugChecksum]
+Checksum=1737126588
+[Exceptions]
+StopOnUncaught=_ 0
+StopOnThrow=_ 0
+[CallStack]
+ShowArgs=1
+[Disassembly]
+MixedMode=0
+[SWOTraceHWSettings]
+OverrideDefaultClocks=0
+CpuClock=72000000
+ClockAutoDetect=0
+ClockWanted=2000000
+JtagSpeed=2000000
+Prescaler=36
+TimeStampPrescIndex=0
+TimeStampPrescData=0
+PcSampCYCTAP=1
+PcSampPOSTCNT=15
+PcSampIndex=0
+DataLogMode=0
+ITMportsEnable=0
+ITMportsTermIO=0
+ITMportsLogFile=0
+ITMlogFile=$PROJ_DIR$\ITM.log
+[Breakpoints]
+Bp0=_ "STD_CODE" "{$PROJ_DIR$\OW\ow.c}.570.5" 1 0 0 0 "" 0 ""
+Bp1=_ "STD_CODE" "{$PROJ_DIR$\OW\ow.c}.580.5" 1 0 0 0 "" 0 ""
+Bp2=_ "STD_CODE" "{$PROJ_DIR$\OW\ow.c}.561.5" 1 0 0 0 "" 0 ""
+Bp3=_ "STD_CODE" "{$PROJ_DIR$\OW\ow.c}.554.5" 1 0 0 0 "" 0 ""
+Bp4=_ "STD_CODE" "{$PROJ_DIR$\OW\ow.c}.544.7" 1 0 0 0 "" 0 ""
+Count=5
+[TraceHelper]
+Enabled=0
+ShowSource=1
+[Interrupts]
+Enabled=1
+[MemoryMap]
+Enabled=0
+Base=0
+UseAuto=0
+TypeViolation=1
+UnspecRange=1
+ActionState=1
+[Trace1]
+Enabled=0
+ShowSource=1
+[JLinkDriver]
+CStepIntDis=_ 0
+[struct_types]
+Fmt0=struct io_state_s-pulse_counter	3	0
+Fmt1=struct io_state_s-pulse_stop_time	3	0
+Fmt2=struct io_state_s-time_of_change	3	0
+Fmt3=struct ping_state_s-count	3	0
+Fmt4=struct ping_state_s-max_retry	3	0
+Fmt5=struct ping_state_s-timeout	3	0
+Fmt6=struct ping_state_s-wait_end_time	3	0
+Fmt7=struct sys_setup_s-filt_mask1	3	0
+Fmt8=struct sys_setup_s-http_port	3	0
+Fmt9=struct sys_setup_s-mask	3	0
+Fmt10=struct tcp_client_s-my_port	3	0
+Fmt11=struct tcp_client_s-port	3	0
+Fmt12=struct tcp_client_s-rx_data_len	3	0
+Fmt13=struct tcp_client_s-timeout	3	0
+Fmt14=struct tcp_client_s-tx_data_len	3	0
+Fmt15=struct tcp_socket_s-closing_time	3	0
+Fmt16=struct termo_state_s-value	3	0
+[array_types]
+Fmt0=unsigned char[4]	3	0
+Fmt1=unsigned int[1]	3	0
+Fmt2=unsigned int[6]	4	0
+[watch_formats]
+Fmt0={W}0:(*(unsigned*)0x20084160)	4	0
+Fmt1={W}0:(new_utc-t)	3	0
+Fmt2={W}0:0x1be	3	0
+Fmt3={W}0:24*3600	3	0
+Fmt4={W}0:T1PR	3	0
+Fmt5={W}0:TxDescriptorNumber	3	0
+Fmt6={W}0:goodcnt	3	0
+Fmt7={W}0:http.post_content_length	3	0
+Fmt8={W}0:local_time>>32	3	0
+Fmt9={W}0:new_utc	3	0
+Fmt10={W}0:next_time	3	0
+Fmt11={W}0:ow_ch	3	0
+Fmt12={W}0:ow_scan_time	3	0
+Fmt13={W}0:ow_tx_len	3	0
+Fmt14={W}0:relay_state	1	0
+Fmt15={W}0:rh_real_h	3	0
+Fmt16={W}0:rh_real_t	3	0
+Fmt17={W}0:sizeof tcp_socket[0]	3	0
+Fmt18={W}0:sm_retry_time	3	0
+Fmt19={W}0:sm_server_code	3	0
+Fmt20={W}0:sys_clock_100ms	3	0
+Fmt21={W}0:sys_clock_counter	3	0
+Fmt22={W}0:tcp_socket[0].closing_time - sys_clock_counter	3	0
+[PowerLog]
+LogEnabled=0
+GraphEnabled=0
+ShowTimeLog=1
+ShowTimeSum=0
+Title0=I0
+Symbol0=0 4 1
+LiveEnabled=0
+LiveFile=PowerLogLive.log
+[DataLog]
+LogEnabled=0
+SumEnabled=0
+GraphEnabled=0
+ShowTimeLog=1
+ShowTimeSum=1
+[EventLog]
+LogEnabled=0
+SumEnabled=0
+GraphEnabled=0
+ShowTimeLog=1
+ShowTimeSum=1
+Title0=Ch0
+Symbol0=0 4 1
+Title1=Ch1
+Symbol1=0 4 1
+Title2=Ch2
+Symbol2=0 4 1
+Title3=Ch3
+Symbol3=0 4 1
+SumSortOrder=0
+[InterruptLog]
+LogEnabled=0
+SumEnabled=0
+GraphEnabled=0
+ShowTimeLog=1
+ShowTimeSum=1
+SumSortOrder=0
+[Log file]
+LoggingEnabled=_ 0
+LogFile=_ ""
+Category=_ 0
+[TermIOLog]
+LoggingEnabled=_ 0
+LogFile=_ ""
+[Trace2]
+Enabled=0
+ShowSource=0
+[SWOTraceWindow]
+PcSampling=0
+InterruptLogs=0
+ForcedTimeStamps=0
+EventCPI=0
+EventEXC=0
+EventFOLD=0
+EventLSU=0
+EventSLEEP=0
+[PowerProbe]
+Frequency=10000
+Probe0=I0
+ProbeSetup0=2 1 1 2 0 0
+[CallStackLog]
+Enabled=0
+[DriverProfiling]
+Enabled=0
+Mode=3
+Graph=0
+Symbiont=0
+Exclusions=
+[Disassemble mode]
+mode=0
+[Breakpoints2]
+Bp0=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.259.5" 0 0 1 "" 0 "" 0
+Bp1=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.247.7" 0 0 1 "" 0 "" 0
+Bp2=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.404.9" 0 0 1 "" 0 "" 0
+Bp3=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.416.5" 0 0 1 "" 0 "" 0
+Bp4=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.353.7" 0 0 1 "" 0 "" 0
+Bp5=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.350.7" 0 0 1 "" 0 "" 0
+Bp6=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.311.5" 0 0 1 "" 0 "" 0
+Bp7=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.306.5" 0 0 1 "" 0 "" 0
+Bp8=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.297.5" 0 0 1 "" 0 "" 0
+Bp9=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.288.7" 0 0 1 "" 0 "" 0
+Bp10=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.252.7" 0 0 1 "" 0 "" 0
+Bp11=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.596.3" 0 0 1 "" 0 "" 0
+Bp12=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.620.1" 0 0 1 "" 0 "" 0
+Count=13
+[Aliases]
+Count=0
+SuppressDialog=0

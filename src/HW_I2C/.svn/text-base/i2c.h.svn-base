@@ -1,0 +1,46 @@
+#include "platform_setup.h"
+#ifndef  I2C_H
+#define  I2C_H
+
+
+
+//Версия модуля
+#define  I2C_VER	1
+//Сборка модуля
+#define  I2C_BUILD	0
+//------------- Проверка зависимостей
+/*
+#ifndef  RTL8305_MODUL
+  #error "RTL8305 modul not defined!!!"
+#else
+  #if RTL8305_VER<1
+    #error "RTL8305 modul version <1!!!"
+  #endif
+#endif
+*/
+//Кол-во процедур инициализации
+#define I2C_INITS	1
+//Кол-во процедур исполняемых в главном цикле
+#define I2C_EXECS	0
+//Кол-во процедур исполняемых в таймере
+#define I2C_TIMERS	0
+//Структура описания модуля
+extern const struct module_rec i2c_struct;  
+
+//---------------- Раздел, где будут определяться константы модуля -------------------------
+
+//---------------- Раздел, где будут определяться структуры модуля -------------------------
+
+//---------------- Раздел, где будут определяться глобальные переменные модуля -------------
+extern uword i2c_hw_addr;
+extern uword i2c_hw_block_size;
+extern unsigned short i2c_hw_size;
+//---------------- Раздел, где будут определяться функции модуля ---------------------------
+void i2c_init(void);                                                                       //Процедура инициализации I2C
+void i2c_read(upointer addr, unsigned char *buf, unsigned short len);
+void i2c_write(upointer addr, unsigned char *buf, unsigned short len);
+
+#define I2C_SET_CHIP(addr,size,block) i2c_hw_addr = addr; i2c_hw_size=size; i2c_hw_block_size= block;
+
+#endif
+

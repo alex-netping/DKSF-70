@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="io_get.cgi"></script>
+<style>
+body {min-width:1330px;}
+select, input[type="text"], input[type="button"] {width:120px;}
+caption input[type="button"] {width:auto;min-width:120px;}
+.parname {width:80%;}
+td {border-top:none;}
+.lamp {display:inline-block;padding:0 1ex 0 1ex;border:solid 2px white;margin-left:4px;}
+.on  {background-color:#00E600;}
+.off {background-color:#E6E6E6;}
+.none {background-color:white;}
+.edtdiv 
+{
+position: absolute;
+z-index:100;
+border: solid 1px green;
+background-color: white;
+padding:25px;
+left:100;
+top:100;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;
+}
+caption {caption-side:bottom;}
+#edt td,th {text-align:center;}
+#edt td {min-width:80px;}
+#ediv h2 {margin-top:0px;}
+</style>
+</head>
+<body>
+
+<!-- DEBUG ----
+<script language="JavaScript" src="menu.js"></script>
+-->
+
+<script>
+/*
+///DEBUG
+var devname="Test UniPing SS";
+var hwmodel=52;
+var sys_name="test_netping",sys_location="-";
+var packfmt={
+name:{offs:0,len:32},
+direction:{offs:34,len:1},
+delay:{offs:32,len:2},
+level_out:{offs:35,len:1},
+on_event:{offs:36,len:1},
+__len:38};
+var data=[
+{name:"",direction:0,delay:10,level_out:1,on_event:0,level:0,pulse_dur:3},
+{name:"",direction:0,delay:20,level_out:0,on_event:7,level:1,pulse_dur:3},
+{name:"",direction:0,delay:30,level_out:0,on_event:0,level:0,pulse_dur:3},
+{name:"",direction:1,delay:40,level_out:0,on_event:0,level:0,pulse_dur:3}
+];
+///
+*/
+menu('Discrete Input-Output');
+
+var labels = {
+name:"Memo",
+direction:"IO Mode",
+level_out:{
+ 1:'&nbsp;&nbsp;Logic 1',
+ 0:'&nbsp;&nbsp;Logic 0'},
+level:"Input Logic Level",
+delay:"Filter out short noise pulses (20-10&nbsp;000ms)",
+pulse_dur:"&nbsp;&nbsp;Pulse Duration (100-25&nbsp;500ms, step 100ms)",
+pulse:"&nbsp;&nbsp;Start Single Pulse"
+};
+
+var req = new XMLHttpRequest();
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e) //v3
+{
+ fld.style.backgroundColor=e?"#ffaaaa":""; // v3 retain default BG
+ if(e) throw fld;
+}
+
+function chkrange(fn,a,b)
+{
+ var f=frm[fn];
+ v=parseInt(f.value);
+ seterr(f, v!=f.value||isNaN(v)||v<a||v>b);
+ return v;
+}
+
+function chkfrm()
+{
+ var n,m,f;
+ var d='';
+ for(ch in data)
+ {
+  f={};
+  f.name=frm['name'+ch].value;
+  f.direction = parseInt(getid('direction'+ch).value);
+  f.level_out=getid('level_out1'+ch).checked;  
+  f.delay=chkrange('delay'+ch,20,10000);
+  f.pulse_dur=Math.round(chkrange('pulse_dur'+ch,100,25500)/100); // in two places!
+  d+=pack(packfmt,f);
+ }
+ document.sender.data.value=d;
+ document.sender.action='io_set.cgi'; 
+ document.sender.submit();
+}
+
+function sendpulse(ch)
+{
+ req.abort();
+ req.open("POST","/io_set_pulse.cgi",true);
+ var dur=Math.round(chkrange('pulse_dur'+ch,100,25500)/100);
+ req.send("data="+hexb(parseInt(ch))+hexb(dur));
+}
+
+function setform()
+{
+ for(n in data) with(data[n]) 
+ {
+  frm['direction'+n].value = direction;
+  frm['delay'+n].value = delay;
+  frm['pulse_dur'+n].value = pulse_dur*100;
+ }
+}
+
+</script>
+<div id="middle">
+<div id="push_margin" style="height:1px"></div>
+<form name="frm" id="idfrm" method="post" action="error.html">
+<table id="edt_x_ref">
+<caption class="send_button">
+<div id="error" class="alert" style="float:left;visibility:hidden;">Automatic real-time refresh don't work! Hit F5 to get new IO status!</div>
+<div style="float:right"><input type="button" value="Apply changes" onclick="chkfrm()"/></div>
+<div style="clear:both"></div>
+</caption>
+
+<script>
+var i,l,n;
+
+function lbl(nm,nm2) { 
+ var s=labels[nm];  if(nm2!=undefined) s=s[nm2]; return '<tr><td class="parname">'+s+'</td>';
+}
+
+function trf(nm,aux) {
+var l=lbl(nm);
+if(!aux) aux='';
+for(n in data) l+=
+'<td class="parinput"><input type="text" '+aux+' name="'+nm+n+'" value="'+data[n][nm]+'"/></td>';
+return l+'</tr>';
+}
+
+function shw(nm,st){
+var n,l='';
+if(!st) st='';
+for(n in data)
+ l+='<td class="parinput" '+st+'>'+data[n][nm]+'</td>';
+return lbl(nm)+l+'</tr>';
+}
+
+function chk(nm){
+var l='', n;
+for(n in data)
+ l+='<td class="parinput"><input type="checkbox" id="'+nm+n+'" name="'+nm+n+'"/></td>';
+return lbl(nm)+l+'</tr>';
+}
+
+function rdo(nm,val,aux)
+{
+var rn, rl='';
+if(!aux) aux='';
+for(rn in data)
+ rl+='<td class="parinput"><input type="radio" id="'+nm+val+rn+'" name="_'+nm+rn+'" value="'+val+'" '+
+  (data[rn][nm]==val?' checked="" ':' ')+aux+' /></td>';
+return lbl(nm,val)+rl+'</tr>';
+}
+
+function sel(nm,aux){
+ var l='', n,sn;
+ if(!aux) aux='';
+ for(n in data) {
+  l+='<td class="parinput"><select id="'+nm+n+'" name="'+nm+n+'" '+aux+'>';
+  for(sn=1;sn<labels[nm].length;++sn) l+='<option>'+labels[nm][sn]+'</option>';
+  l+='</select></td>';
+ }
+ return lbl(nm,0)+l+'</tr>';
+}
+
+function show_io_ch_status(ch,st)
+{
+  getid('level'+ch).innerHTML=st?'1<span class="lamp on">&nbsp;</span>':'0<span class="lamp off">&nbsp;</span>';
+  var legend = st ? data[ch].nf_legend_high : data[ch].nf_legend_low;
+  if(!legend) legend='-';
+  getid('level_text'+ch).innerHTML=legend;
+}
+
+function show_io_status()
+{
+ for(var n in data) show_io_ch_status(n,(data_status>>n)&1);
+}
+
+function direction_changed() 
+{
+ var n,dir;
+ for(n in data) 
+ {
+  dir=getid('direction'+n).value;
+  getid('level_out0'+n).disabled=(dir!=1);
+  getid('level_out1'+n).disabled=(dir!=1); 
+  getid('pulse'+n).disabled=(dir!=1);
+ }
+}
+
+var n_ch=data.length; 
+l='';
+
+l+='<tr><th class="parname">Parameter</th>';
+for(n in data) l+='<th class="parinput">IO '+(parseInt(n)+1)+'</th>';
+l+='</tr>';
+
+l+=trf('name','style="color:#009020"');
+
+l+=lbl('direction');
+for(n in data) 
+{
+ l+='<td class="parinput">';
+ l+='<select id="direction'+n+'" onchange="direction_changed()">';
+ l+='<option value="0">Input</option>';
+ l+='<option value="1">Output</option>';
+ if(typeof use_logic_output!='undefined'&&n<use_logic_output) //26.11.14
+  l+='<option value="2">Output of Logic</option>';
+ l+='</select></td>';
+}
+l+='</tr>'
+
+l+=trf('delay');
+
+l+='<tr><td class="parname">'+labels['level']+'</td>';
+for(n in data)
+ l+='<td class="parinput" id="level'+n+'" style="font-weight:bold">-</td>';
+l+='</tr>';
+
+l+='<tr><td class="parname">'+labels['level_text']+'</td>';
+for(n in data)
+ l+='<td class="parinput" id="level_text'+n+'" style="font-weight:bold">-</td>';
+l+='</tr>';
+
+l+='<tr><td class="parname" id="edt_y_ref">Notification on Logic Level change</td>';
+for(n in data)
+ l+='<td class="parinput"><input type="button" value="Setup" onclick="edit_notif('+n+')"/></td>';
+l+='</tr>';
+
+l+='<tr><td class="parname" colspan="'+(n_ch+1)+'">Output Logic Level</td></tr>';
+l+=rdo('level_out',1);
+l+=rdo('level_out',0);
+
+
+l+='<tr><td class="parname" colspan="'+(n_ch+1)+'">Single Pulse generation</td></tr>';
+l+=trf('pulse_dur');
+
+l+=lbl('pulse');
+for(n in data)
+ l+='<td class=parinput><input type="button" id="pulse'+n+'" value="Pulse" onclick="sendpulse('+n+')"/></td>';
+l+='</tr>';
+document.write(l);
+
+</script>
+</table>
+</form>
+
+<form name="sender" style="display:none" method="post">
+<input type="hidden" name="data" />
+</form>
+<script>
+if(typeof frm=='undefined') var frm=document.frm;
+setform();
+direction_changed();
+show_io_status();
+
+var sse_timeout;
+function show_sse_error() { getid('error').style.visibility="visible"; }
+function hide_sse_error() { getid('error').style.visibility="hidden"; }
+function alive() { clearTimeout(sse_timeout); sse_timeout=setTimeout(show_sse_error,12000); hide_sse_error(); }
+
+if(typeof(window.EventSource)=='undefined' || devname.indexOf('Test')!=-1)
+{
+ //getid('statelabel').innerHTML+=' (нажмите F5 для обновления)';
+ show_sse_error();
+}
+else
+{
+ var sse=new EventSource("/sse.cgi");
+ sse.addEventListener('io_state', function (e) { alive(); window.data_status=parseInt(e.data); show_io_status(); }, false);
+ sse.addEventListener('sse_ping', alive, false);
+ alive();
+}
+</script>
+
+<script>
+function set_nf_cb(ev,msk)
+{
+ f=document.notif_frm;
+ f['nf_log'+ev].checked=msk&1;
+ f['nf_syslog'+ev].checked=msk&2;
+ f['nf_email'+ev].checked=msk&4;
+ f['nf_sms'+ev].checked=msk&8;
+ f['nf_trap'+ev].checked=msk&16; 
+}
+
+function get_nf_cb_hex(ev)
+{
+ f=document.notif_frm;
+ msk=0;
+ if(f['nf_log'+ev].checked) msk|=1;
+ if(f['nf_syslog'+ev].checked) msk|=2;
+ if(f['nf_email'+ev].checked) msk|=4;
+ if(f['nf_sms'+ev].checked) msk|=8;
+ if(f['nf_trap'+ev].checked) msk|=16;
+ return hexb(msk,2);
+}
+
+function edit_notif(ch)
+{
+ if(getid('ediv').style.visibility=='visible') return;
+ ch=parseInt(ch);
+ if(typeof ch_base!='undefined') ch+=ch_base;
+ var req=new XMLHttpRequest();
+ req.open('GET','/notify_get.cgi?nfid=02'+hexb(ch),false);
+ req.send(null);
+ if(req.status!=200||req.responseText==''||req.responseText=='error') return;
+ getid('notif_ch').innerHTML=ch+1; 
+ var d=eval(req.responseText);
+ set_nf_cb('1',d.high);
+ set_nf_cb('0',d.low);
+ set_nf_cb('_r',d.report);
+ document.notif_frm.nf_legend_high.value=d.legend_high;
+ document.notif_frm.nf_legend_low.value=d.legend_low;
+ var x,y;
+ x=getid('edt_x_ref').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
+ y=getid('edt_y_ref').offsetTop+100;
+ getid('ediv').style.top=y+'px';
+ getid('ediv').style.left=x+'px'; 
+ getid('ediv').style.visibility='visible';
+}
+
+var nfreq=new XMLHttpRequest();
+
+function save_notif(y)
+{
+ if(!y)
+ {
+  getid('ediv').style.visibility='hidden';
+ }
+ else
+ {
+  nfreq.abort();
+  var ch=parseInt(getid('notif_ch').innerHTML)-1;
+  var d='data=02'+hexb(ch);//io
+  d+=pack(//kinda hack,legends,2x16b pasc+zterm strings
+   {legend_high:{offs:0,len:16}, legend_low:{offs:16,len:16}, __len:32},
+   {legend_high:document.notif_frm.nf_legend_high.value, legend_low:document.notif_frm.nf_legend_low.value}
+  );
+  d+=get_nf_cb_hex('1');
+  d+=get_nf_cb_hex('0');
+  d+=get_nf_cb_hex('_r');
+  d+='0000';//reserved
+  d+='000000000000000000000000000000000000000000000000';//reserved2
+  nfreq.onreadystatechange = function() 
+  {
+   if(nfreq.readyState==4 && nfreq.status==200)
+    getid('ediv').style.visibility='hidden';
+    // update legends
+    data[ch].nf_legend_high=document.notif_frm.nf_legend_high.value;
+    data[ch].nf_legend_low=document.notif_frm.nf_legend_low.value;
+    show_io_status();
+  }     
+  nfreq.open("POST","/notify_set.cgi",true);
+  nfreq.send(d);
+ }
+}
+</script>
+
+<div id="ediv" class="edtdiv">
+<form name="notif_frm">
+<h2>Notifications for IO line&nbsp;<span id="notif_ch">0</span></h2>
+<table id="edt">
+<caption class="send_button">
+<input type="button" value="Cancel" onclick="save_notif(0)"/>
+<input type="button" value="Save" onclick="save_notif(1)"/>
+</caption>
+
+<tr>
+<th style="text-align:left">Event</th>
+<th>Log</th>
+<th>Syslog</th>
+<th>E-mail</th>
+<th>SMS</th>
+<th>SNMP Trap</th>
+</tr>
+
+<tr>
+<td style="text-align:left">Front (level change 0->1)</td>
+<td><input type="checkbox" name="nf_log1"/></td>
+<td><input type="checkbox" name="nf_syslog1"/></td>
+<td><input type="checkbox" name="nf_email1"/></td>
+<td><input type="checkbox" name="nf_sms1"/></td>
+<td><input type="checkbox" name="nf_trap1"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Decay (level change 1->0)</td>
+<td><input type="checkbox" name="nf_log0"/></td>
+<td><input type="checkbox" name="nf_syslog0"/></td>
+<td><input type="checkbox" name="nf_email0"/></td>
+<td><input type="checkbox" name="nf_sms0"/></td>
+<td><input type="checkbox" name="nf_trap0"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Include in Summary Report</td>
+<td><input type="checkbox" name="nf_log_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_syslog_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_email_r"/></td>
+<td><input type="checkbox" name="nf_sms_r"/></td>
+<td><input type="checkbox" name="nf_trap_r" disabled=""/></td>
+</tr>
+
+<tr>
+<th style="text-align:left;padding-top:20px;">Logic level</th>
+<th style="text-align:right;padding-top:20px;" colspan="5">Legend</th>
+</tr>
+
+<tr>
+<td style="text-align:left">Logic 1</td>
+<td style="text-align:right" colspan="5"><input type="text" style="color:#009020" name="nf_legend_high" maxlength="14"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Logic 0</td>
+<td style="text-align:right" colspan="5"><input type="text" style="color:#009020" name="nf_legend_low" maxlength="14"/></td>
+</tr>
+
+</table>
+</form>
+</div>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

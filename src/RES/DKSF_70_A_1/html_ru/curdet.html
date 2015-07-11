@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="curdet_get.cgi"></script>
+<style>
+body {min-width:930px;}
+form {max-width:900px;}
+select,input[type="text"],input[type="button"] {width:180px;} 
+caption {caption-side:bottom;}
+.edtdiv {
+position: absolute;
+z-index:100;
+border: solid 1px green;
+background-color: white;
+padding:25px;
+left:100;
+top:100;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;
+}
+#edt td,th {text-align:center;}
+#edt td {min-width:80px;}
+#ediv h2 {margin-top:0px;}
+</style>
+</head>
+
+<body>
+<script>
+/*
+//// DEBUGGGG
+data = 
+{
+status:1,
+current:55,
+vdrop:132,
+al_mode:0,
+cut_mode:0,
+short_mode:0,
+al_threshld:0,
+cut_threshld:0,
+short_threshld:0,
+al_cmp:0,
+al_hyst:5,
+cut_hyst:5,
+short_hyst:5,
+trap:7,
+power:1,
+voltage:1,
+rst_period:5
+};
+devname="Test Uniping";
+//end  DEBUGGG
+*/
+data.cut_cmp=(data.cut_mode==0?0:1);
+data.short_cmp=(data.short_mode==0?1:0); 
+data.rst_flag=0;
+//var lp_res=Math.round(1.0*data.vdrop/(data.current+0.001));
+//if(lp_res>999999) lp_res=999999;
+
+function getid(id) {return document.getElementById(id);}
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function field(nm, val)
+{
+return '<tr><td class="parname">'+nm+'</td>'+
+'<td class="parinput">'+val+'</td></tr>';
+}
+
+function set_mode(fld)
+{
+ var mode=fld.selectedIndex;
+ var h=[5/*ma*/,1500/*mV*/,200/*Ohm*/][mode];
+ with(frm)
+ {
+  switch(fld.name)
+  {
+  case 'al_mode': al_hyst.value=h; break;
+  case 'cut_mode': cut_cmp.selectedIndex = mode==0 ? 0 : 1; cut_hyst.value=h; break;
+  case 'short_mode': short_cmp.selectedIndex = mode==0 ? 1 : 0; short_hyst.value=h; break;
+  }
+ }
+ data[fld.name]=mode;
+}
+
+function hyst(f) { }
+
+function confirm24v(sel)
+{
+ if(
+  sel.selectedIndex==1 && 
+  !confirm("ВНИМАНИЕ!\nПитание шлейфа 24В может повредить оборудование,\nрасчитанное на меньшее напряжение.\n\nНажмите ОК, чтобы установить 24В!\n\n")
+  ) sel.selectedIndex=0;
+  data.voltage=sel.selectedIndex;
+}
+
+function setform()
+{
+ var d=data;
+ for(i=0;i<frm.elements.length;++i) with(frm.elements[i]) switch(type)
+ { 
+ case "text": value=d[name]; break;
+ case "radio": checked=(value==d[name]); break;
+ case "checkbox": checked=value&d[name]; break;
+ case "select-one": selectedIndex=d[name]; break;
+ }
+}
+
+function chkfrm()
+{
+ var d=data,el,v;
+ for(i=0;i<document.frm.elements.length;++i) 
+ { 
+  el=document.frm.elements[i];
+  el.style.backgroundColor="#ffffff";
+  try
+  {
+   with(el) switch(type)
+   { 
+   case "text": v=parseInt(value); if(isNaN(v)) throw 1; data[name]=v; break;
+   case "radio": if(checked) data[name]=parseInt(value); break;
+   case "checkbox": data[name]&=~value; if(checked) data[name]|=value; break;
+   case "select-one": data[name]=selectedIndex; break;
+   }
+  } catch(e){ el.style.backgroundColor="#ffaaaa"; return false; }
+ } 
+ document.sender.data.value=pack(packfmt,d);
+ document.sender.submit();
+ return false;
+}
+
+menu('Датчик дыма (токовый датчик)');
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+<form name="frm" action="error.html" method="POST">
+
+<h2>Текущее состояние датчика</h2>
+<table>
+<script>
+var l='';
+l+=field('Статус (нажмите F5 для обновления)', ['Норма','Тревога','Обрыв','Кор.зам.','Обесточен'][data.status]);
+l+=field('Ток в шлейфе, мА',data.current);
+l+=field('Падение напряжения на шлейфе, мВ',data.vdrop);
+l+=field('Сопротивление шлейфа, Ом',data.resist);
+document.write(l);
+</script>
+</table>
+
+<h2 id="edt_y_ref">Настройка событий</h2>
+<table id="edt_x_ref">
+<tr>
+<th></th> 
+<th class="parinput">Тревога</th>
+<th class="parinput">Обрыв шлейфа</th>
+<th class="parinput">Кор.зам.шлейфа</th>
+</tr>
+<tr>
+<td class="parname">Параметр шлейфа</td>
+<td class="parinput"><select name="al_mode" onchange="set_mode(this)">
+ <option>Ток, мА</option>
+ <option>Напряжение, мВ</option>
+ <option>Сопротивл, Ом</option> 
+</select></td>
+<td class="parinput"><select name="cut_mode" onchange="set_mode(this)">
+ <option>Ток, мА</option>
+ <option>Напряжение, мВ</option>
+ <option>Сопротивл, Ом</option> 
+</select></td>
+<td class="parinput"><select name="short_mode" onchange="set_mode(this)">
+ <option>Ток, мА</option>
+ <option>Напряжение, мВ</option>
+ <option>Сопротивл, Ом</option> 
+</select></td>
+</tr>
+<tr>
+<td class="parname">Условие</td>
+<td class="parinput"><select name="al_cmp">
+ <option>Меньше</option> 
+ <option>Больше</option>
+</select></td>
+<td class="parinput"><select name="cut_cmp" disabled="">
+ <option>Меньше</option> 
+ <option>Больше</option>
+</select></td>
+<td class="parinput"><select name="short_cmp" disabled="">
+ <option>Меньше</option> 
+ <option>Больше</option>
+</select></td>
+</tr>
+<tr>
+<td class="parname">Порог</td>
+<td class="parinput"><input type="text" name="al_threshld" type="text" onchange="hyst('al')"/></td>
+<td class="parinput"><input type="text" name="cut_threshld" type="text" onchange="hyst('cut')"/></td>
+<td class="parinput"><input type="text" name="short_threshld" type="text" onchange="hyst('short')"/></td>
+</tr>
+<tr>
+<td class="parname">Гистерезис&nbsp;<sup>*</sup></td>
+<td class="parinput"><input type="text" name="al_hyst" type="text"/></td>
+<td class="parinput"><input type="text" name="cut_hyst" type="text"/></td>
+<td class="parinput"><input type="text" name="short_hyst" type="text"/></td>
+</tr>
+<td class="parname">Уведомления при смене состояния</td>
+<td class="parinput" colspan="3"><input type="button" name="notif_butt" value="Настроить" onclick="edit_notif()"/></td>
+</tr>
+</table>
+
+<div class="note" style="margin-top: 15px; margin-left:10px">
+*) Гистерезис - "откат" параметра от порога, необходимый для деактивации и повторного срабатывания события
+</div>
+
+<h2>Настройка питания шлейфа</h2>
+<table>
+<caption class="send_button">
+<input type="button" value="Применить изменения" onclick="chkfrm()"/>
+</caption>
+<td class="parname">Питание шлейфа</td>
+<td class="parinput">
+<input type="radio" name="power" value="1"/>Вкл
+<input type="radio" name="power" value="0"/>Выкл
+<input type="radio" name="power" value="3"/>Управляется логикой
+</td>
+<tr>
+<td class="parname">Напряжение питания шлейфа</td>
+<td class="parinput">
+<select name="voltage" onchange="confirm24v(this)">
+ <option>12V</option> 
+ <option disabled="">24V</option>
+</select>
+</td>
+</tr>
+<tr>
+<td class="parname">Время сброса снятием питания, с</td>
+<td class="parinput"><input type="text" name="rst_period" /></td>
+</tr>
+<tr>
+<td class="parname">Выполнить сброс</td>
+<td class="parinput"><input type="checkbox" name="rst_flag" value="1" /></td>
+</tr>
+</table>
+</form>
+
+<script>
+setform();
+</script>
+
+<form name="sender" style="display:none" method="post" action="curdet_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+<script>
+function set_nf_cb(ev,msk)
+{
+ f=document.notif_frm;
+ f['nf_log'+ev].checked=msk&1;
+ f['nf_syslog'+ev].checked=msk&2;
+ f['nf_email'+ev].checked=msk&4;
+ f['nf_sms'+ev].checked=msk&8;
+ f['nf_trap'+ev].checked=msk&16; 
+}
+
+function get_nf_cb_hex(ev)
+{
+ f=document.notif_frm;
+ msk=0;
+ if(f['nf_log'+ev].checked) msk|=1;
+ if(f['nf_syslog'+ev].checked) msk|=2;
+ if(f['nf_email'+ev].checked) msk|=4;
+ if(f['nf_sms'+ev].checked) msk|=8;
+ if(f['nf_trap'+ev].checked) msk|=16;
+ return hexb(msk,2);
+}
+
+function edit_notif()
+{
+ if(getid('ediv').style.visibility=='visible') return;
+ var req=new XMLHttpRequest();
+ req.open('GET','/notify_get.cgi?nfid=0400',false);//curdet
+ req.send(null);
+ if(req.status!=200||req.responseText==''||req.responseText=='error') return;
+ var d=eval(req.responseText);
+ set_nf_cb('3',d.high);
+ set_nf_cb('2',d.norm);
+ ///set_nf_cb('1',d.low);
+ set_nf_cb('0',d.fail);
+ set_nf_cb('_r',d.report);
+ var x,y;
+ x=getid('edt_x_ref').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<40) x=40;
+ y=getid('edt_y_ref').offsetTop;
+ getid('ediv').style.top=y+'px';
+ getid('ediv').style.left=x+'px'; 
+ getid('ediv').style.visibility='visible';
+}
+
+var nfreq=new XMLHttpRequest();
+
+function save_notif(y)
+{
+ if(!y)
+ {
+  getid('ediv').style.visibility='hidden';
+ }
+ else
+ {
+  nfreq.abort();
+  var d='data=0400'; //curdet
+  d+=get_nf_cb_hex('3');
+  d+=get_nf_cb_hex('2');
+  d+='0000';//d+=get_nf_cb_hex('1');
+  d+=get_nf_cb_hex('0');  
+  d+=get_nf_cb_hex('_r');
+  d+='0000'+'00000000'; // reserved
+  nfreq.onreadystatechange = function() 
+  {
+   if(nfreq.readyState==4 && nfreq.status==200)
+    getid('ediv').style.visibility='hidden';
+  }     
+  nfreq.open("POST","/notify_set.cgi",true);
+  nfreq.send(d);
+ }
+}
+</script>
+
+<div id="ediv" class="edtdiv">
+<form name="notif_frm">
+<h2>Уведомления для токового датчика</h2>
+<table id="edt">
+<caption class="send_button">
+<input type="button" value="Отменить изменения" onclick="save_notif(0)"/>
+<input type="button" value="Сохранить изменения" onclick="save_notif(1)"/>
+</caption>
+
+<tr>
+<th style="text-align:left">Событие</th>
+<th>Журнал</th>
+<th>Syslog</th>
+<th>E-mail</th>
+<th>SMS</th>
+<th>SNMP Trap</th>
+</tr>
+
+<tr>
+<td style="text-align:left">Тревога</td>
+<td><input type="checkbox" name="nf_log3"/></td>
+<td><input type="checkbox" name="nf_syslog3"/></td>
+<td><input type="checkbox" name="nf_email3"/></td>
+<td><input type="checkbox" name="nf_sms3"/></td>
+<td><input type="checkbox" name="nf_trap3"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Норма</td>
+<td><input type="checkbox" name="nf_log2"/></td>
+<td><input type="checkbox" name="nf_syslog2"/></td>
+<td><input type="checkbox" name="nf_email2"/></td>
+<td><input type="checkbox" name="nf_sms2"/></td>
+<td><input type="checkbox" name="nf_trap2"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Отказ (обрыв, короткое замыкание шлейфа)</td>
+<td><input type="checkbox" name="nf_log0"/></td>
+<td><input type="checkbox" name="nf_syslog0"/></td>
+<td><input type="checkbox" name="nf_email0"/></td>
+<td><input type="checkbox" name="nf_sms0"/></td>
+<td><input type="checkbox" name="nf_trap0"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Периодический отчёт</td>
+<td><input type="checkbox" name="nf_log_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_syslog_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_email_r"/></td>
+<td><input type="checkbox" name="nf_sms_r"/></td>
+<td><input type="checkbox" name="nf_trap_r" disabled=""/></td>
+</tr>
+
+</table>
+</form> <!--notif_frm-->
+</div><!--ediv-->
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script language="JavaScript" src="menu.js"></script>-->
+<script src="sendmail_get.cgi"></script>
+<style>
+form {max-width:900px;}
+input {width:220px;}
+input[type="checkbox"] {width:auto;}
+caption {caption-side:bottom;}
+</style>
+</head>
+<body>
+<script>
+/*
+///DEBUGG
+var devname='NetPing Test';
+data={};
+///
+*/
+menu('E-mail Notifications');
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) 
+{
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) 
+{
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 22.03.2011, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function showerr(fld)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+ if(e) throw fld;
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function chk_fqdn(fld)
+{
+ var a=fld.value;
+ a = a.replace(/^\s+|\s+$/g,''); // trim sp
+ if(a=='') 
+ {
+  seterr(fld,0);
+ }
+ else if((/^((\d{1,3})\.){3}(\d{1,3})$/).test(a)) // numeric ip
+ {
+  var ipa=a.split('.'); 
+  for(n in ipa)
+  {
+   ipa[n] = parseInt(ipa[n]);
+   if(ipa[n]>255) seterr(fld_hn,1);
+  }
+  seterr(fld,0);
+ }
+ else if((/^(?=.{1,62}$)([a-z0-9]+(-[a-z0-9]+)*)(\.[a-z0-9]+(-[a-z0-9]+)*)*$/i).test(a)) //domain name up to 62 chars, may be multi-label or just 1 label
+ {
+  seterr(fld,0);
+ }
+ else
+  seterr(fld,1);
+ return a;
+}
+
+function chkfrm() 
+{
+ var f={},frm=document.frm;
+ f.flags=data.flags;
+ if(frm.enable_sm.checked) f.flags|=1; else f.flags&=~1;
+ f.fqdn=chk_fqdn(frm.fqdn);
+ f.port=range(frm.port,0,32767);
+ f.user=frm.user.value;
+ f.passwd=frm.passwd.value;
+ f.from=frm.from.value;
+ f.to=frm.to.value;
+ f.cc_1=frm.cc_1.value;
+ f.cc_2=frm.cc_2.value;
+ f.cc_3=frm.cc_3.value; 
+ seterr(frm.reports, !frm.reports.value.match(/^\s*([0-2][0-9]:[0-5][0-9])?(\s+[0-2][0-9]:[0-5][0-9])*\s*$/));
+ f.reports=frm.reports.value;
+ document.sender.data.value=pack(packfmt,f);
+ document.sender.submit();
+ return false;
+}
+
+</script>
+
+<div id="middle">
+<div id="push_margin" style="height:1px"></div>
+<h2>SMTP Settings For Outgoing e-mail</h2>
+<form name="frm" method="post" action="error.html">
+<table id="table">
+<caption align="bottom" class="send_button_container">
+<input type="button" value="Apply Changes" onclick="chkfrm()"/>
+</caption>
+<tr>
+<td class="parname">Enable Sending of E-mail</td>
+<td class="parinput"><input type="checkbox" name="enable_sm"/></td>
+</tr>
+<tr>
+<td class="parname">SMTP Server Address</td>
+<td class="parinput"><input type="text" name="fqdn" maxlength="62"/></td>
+</tr>
+<tr>
+<td class="parname">SMTP Server TCP Port</td>
+<td class="parinput"><input type="text" name="port"/></td>
+</tr>
+<tr>
+<td class="parname">Username</td>
+<td class="parinput"><input type="text" name="user" maxlength="48"/></td>
+</tr>
+<tr>
+<td class="parname">Password</td>
+<td class="parinput"><input type="password" name="passwd" maxlength="30"/></td>
+</tr>
+<tr>
+<td class="parname">From</td>
+<td class="parinput"><input type="text" name="from" maxlength="48"/></td>
+</tr>
+<tr>
+<td class="parname">To</td>
+<td class="parinput"><input type="text" name="to" maxlength="46"/></td>
+</tr>
+<tr>
+<td class="parname">Copy To (сс:)</td>
+<td class="parinput"><input type="text" name="cc_1" maxlength="46"/></td>
+</tr>
+<tr>
+<td class="parname">Copy To (сс:)</td>
+<td class="parinput"><input type="text" name="cc_2" maxlength="46"/></td>
+</tr>
+<tr>
+<td class="parname">Copy To (сс:)</td>
+<td class="parinput"><input type="text" name="cc_3" maxlength="46"/></td>
+</tr>
+<tr>
+<td class="parname">Time for Summary Reports (HH:MM <span style="color:green">24h</span> format, up to 12 time points, divided by space)</td>
+<td class="parinput"><input type="text" name="reports" maxlength="60"/></td>
+</tr>
+</table>
+</form>
+
+<form name="sender" style="display:none" method="post" action="sendmail_set.cgi">
+<input type="hidden" name="data"/>
+</form>
+
+<script>
+var f=document.frm;
+f.enable_sm.checked=data.flags&1;
+f.fqdn.value=data.fqdn;
+f.port.value=data.port;
+f.user.value=data.user;
+f.passwd.value=data.passwd;
+f.from.value=data.from;
+f.to.value=data.to;
+f.cc_1.value=data.cc_1;
+f.cc_2.value=data.cc_2;
+f.cc_3.value=data.cc_3;
+f.reports.value=data.reports;
+var ts=document.getElementsByTagName('input');
+</script>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

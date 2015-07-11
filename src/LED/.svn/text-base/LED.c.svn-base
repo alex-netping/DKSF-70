@@ -1,0 +1,130 @@
+
+#include "platform_setup.h"
+
+#ifdef LED_MODUL
+
+
+#ifndef LED_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+        #undef DEBUG_INPUT_PARAM
+        #undef DEBUG_OUTPUT_PARAM	
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+        #define DEBUG_INPUT_PARAM(msg,val)	
+        #define DEBUG_OUTPUT_PARAM(msg,val)	
+	
+#endif
+
+//Описание констант модуля
+const struct exec_queue_rec led_init_table[]={{(upointer)led_init,LED_INIT1_PRI|LAST_REC}};
+#ifdef LED_NO_INTR
+const struct exec_queue_rec led_exec_table[]={{(upointer)led_exec,LED_EXEC1_PRI|LAST_REC}};
+#endif
+const struct exec_queue_rec led_timer_table[]={{(upointer)led_timer,TIMER2|LAST_REC}};
+
+const struct module_rec led_struct={(upointer)led_init_table,
+#ifdef LED_NO_INTR
+                                      (upointer)led_exec_table,
+#else
+                                      (upointer)NULL,
+#endif
+                                      (upointer)led_timer_table};
+                                      
+//Описание переменных модуля                                      
+static uword led_blink_always;
+static unsigned int led_low_c,led_high_c;
+static unsigned int led_low_count,led_high_count,led_full_count;
+uword led_timer_flag;
+
+//Описание процедур модуля
+void led_init(void)
+{ DEBUG_PROC_START("led_init");
+  led_timer_flag = 0;
+  led_high_c = 0;led_low_c = 0;
+  led_low_count = 0;led_high_count = 0;
+  LED_ON();
+  DEBUG_PROC_END("led_init");
+}
+
+void led_timer(void)
+{ 
+  if (!led_high_c || !led_low_c)
+     return;
+  if (led_full_count || led_blink_always)
+  { 
+    if (!led_blink_always)
+      led_full_count--;
+      
+    if (led_low_count)
+    {   if (!(--led_low_count))
+        {   led_high_count = led_high_c;
+            led_timer_flag = 1;
+        } 
+    }
+    if (led_high_count)
+    {   if (!(--led_high_count))
+        {   led_low_count = led_low_c;
+            led_timer_flag = 1;
+        }
+    }
+  }
+  else{
+   led_timer_flag = 0;
+   led_high_c = 0;led_low_c = 0;
+   led_low_count = 0;led_high_count = 0;
+   led_blink_always=0;
+   LED_ON();
+  }
+
+    
+
+#ifndef LED_NO_INTR
+    led_exec();
+#endif
+}
+
+void led_exec(void)
+{ 
+  if (!led_timer_flag)
+     return;
+  if (led_low_count)
+      LED_OFF();
+  if (led_high_count)
+      LED_ON();
+  led_timer_flag = 0;
+}
+
+//void led_generation(uword t_low,uword t_hi,uword num) //t_low - mS, t_hi - mS
+void led_generation(unsigned int t_low,unsigned int t_hi,uword num) //t_low - mS, t_hi - mS
+{   DEBUG_PROC_START("led_generation");
+    LED_DIS_INTR;
+    led_low_c = t_low/TIMER2_SCALLER;
+    led_high_c = t_hi/TIMER2_SCALLER;
+    if (!num)
+      led_blink_always = 1;
+    else{
+      led_full_count = (led_low_c + led_high_c)*num;
+      led_blink_always = 0;
+    }
+    led_low_count = 0;
+    led_high_count = 1;
+    LED_EN_INTR;
+    DEBUG_PROC_END("led_generation");
+}
+
+void led_stop_generation(void)
+{   DEBUG_PROC_START("led_stop_generation");
+    LED_DIS_INTR;
+    led_init();
+    LED_EN_INTR;
+    DEBUG_PROC_END("led_stop_generation");
+}
+
+#endif

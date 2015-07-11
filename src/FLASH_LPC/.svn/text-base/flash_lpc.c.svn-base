@@ -1,0 +1,116 @@
+
+#include "platform_setup.h"
+
+
+#ifdef FLASH_LPC_MODUL
+
+#ifndef FLASH_LPC_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+        #undef DEBUG_INPUT_PARAM
+        #undef DEBUG_OUTPUT_PARAM	
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+        #define DEBUG_INPUT_PARAM(msg,val)	
+        #define DEBUG_OUTPUT_PARAM(msg,val)	
+	
+#endif
+
+//Описание переменных модуля
+
+//Описание констант модуля
+
+//Описание процедур модуля
+typedef void (__thumb *IAP1)(void*, void*);
+
+void prepare_sect(unsigned int start,unsigned int stop)
+{
+  static IAP1 entry;
+  unsigned long cmd[6];
+  unsigned long status[3];
+  entry=(IAP1)0x7ffffff1;
+  cmd[0] = 50;
+  cmd[1] = start;
+  cmd[2] = stop;
+  entry(cmd, status);
+}
+
+
+void flash_lpc_erase(uword num1,uword num2)
+{
+  static IAP1 entry;
+  unsigned long cmd[6];
+  unsigned long status[3];
+  DEBUG_PROC_START("flash_lpc_erase");
+  __disable_interrupt();
+  entry=(IAP1)0x7ffffff1;
+  MEMMAP=1;
+  prepare_sect(num1,num2);
+    //Erase sector
+  cmd[0] = 52;
+  cmd[1] = num1;
+  cmd[2] = num2;
+  cmd[3] = 14746;
+  entry(cmd, status);
+  MEMMAP=2;
+  __enable_interrupt();
+  DEBUG_PROC_END("flash_lpc_erase");
+}
+
+void flash_lpc_write(unsigned long addr,unsigned char *buf,unsigned short len)
+{
+  static unsigned char stack[256];
+  unsigned int addr1,addr2,size_b;
+  DEBUG_PROC_START("flash_lpc_write");
+  
+  addr1=addr; addr1&=~(0xFF);
+  addr2=addr; addr2&=0xFF;
+  do{
+    size_b=256-addr2;
+    if ((size_b>=len)&&(len<=256)) {size_b=len;}
+    len-=size_b;
+    util_cpy((unsigned char*)addr1,stack,256);
+    util_cpy(buf,&stack[addr2],size_b);
+    flash_wr_func(addr1,stack,256);
+    addr1+=256; addr2=0;
+    buf+=size_b;
+  }while(len);
+  DEBUG_PROC_END("flash_lpc_write");
+}
+
+void flash_wr_func(unsigned long addr,unsigned char *buf,unsigned int len)
+{
+  static IAP1 entry;
+  unsigned long cmd[6];
+  unsigned long status[3];
+  unsigned int i;
+  if(addr < 32768) i=addr>>12;
+  else i=(((addr-32768)>>15)+8);
+  if(FLASH_LPC_PROC == FLASH_LPC_2138) 
+  {
+    if(addr > 0x77FFF) i = (((addr-0x78000)>>12)+22);
+  }
+  __disable_interrupt();
+  prepare_sect(i,i);
+  //Prepare sector
+  MEMMAP=1;
+  entry=(IAP1)0x7ffffff1;
+  //Program sector.
+  cmd[0] = 51;
+  cmd[1] = addr;    
+  cmd[2] = (unsigned long)buf;
+  cmd[3] = len;
+  cmd[4] = 14746;
+  entry(cmd, status);
+  MEMMAP=2;
+  __enable_interrupt(); 
+}
+
+#endif
+

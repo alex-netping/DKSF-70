@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="setup_get.cgi"></script>
+<style>
+form {width:900px;}
+input {min-width:200px;}
+input[type="radio"], input[type="checkbox"] {min-width:0px;}
+.send_button_container {text-align:right;}
+</style>
+<script>
+
+if(!data.length) data=[data];
+var Nch=data.length;
+
+function getid(id) {return document.getElementById(id);}
+
+var fmtre=[null,/%1/g,/%2/g,/%3/g,/%4/g,/%5/g,/%6/g,/%7/g,/%8/g,/%9/g];
+function fmt(s,arg) { for(n in arg) s=s.replace(fmtre[n],arg[n]); return s; }
+
+function grplbl(h) { return '<tr><td class="parname" colspan="'+(Nch+1)+'">'+h+'</td></tr>'; }
+
+function grp_radio(hdr, labels, name)
+{
+ var l=grplbl(hdr);
+ for(v in labels)
+ {
+  l+='<tr><td class="parsel">'+labels[v]+'</td>';
+  for(ch=0;ch<Nch;++ch)
+   l+='<td class="parinput"><input type="radio" name="'+(name+ch)+'" value="'+v+'" '+(v==data[ch][name]?'checked=""':'')+'/></td>';
+  l+='</tr>';
+ }
+ return l;
+}
+
+function grp_cb(hdr, labels, name)
+{
+ var l=grplbl(hdr);
+ for(v in labels)
+ {
+  l+='<tr><td class="parsel">'+labels[v]+'</td>';
+  for(ch=0;ch<Nch;++ch)
+   l+='<td class="parinput"><input type="checkbox" name="'+(name+ch)+'" value="'+v+'" '+((v & data[ch][name])?'checked=""':'')+'/></td>';
+  l+='</tr>';
+ }
+ return l;
+}
+
+function okp(fld)
+{
+ if(fld.type!='text') return;
+ var w=fld.value.length+5;
+ if(w<20) w=20;
+ fld.size=w;
+}
+
+function input(label, name, aux)
+{
+  var l='<tr><td class="parname">'+label+'</td>';
+  for(ch=0;ch<Nch;++ch) 
+   l+='<td class="parinput"><input type="text" name="'+(name+ch)+'" value="'+data[ch][name]+'" '+(aux?aux:'')+'/></td>';
+  return l+'</tr>';
+}
+
+function hn_input(label, fn_ip, fn_hn)
+{
+ var d,l='<tr><td class="parname">'+label+'</td>';
+ for(ch=0;ch<Nch;++ch)  
+ {
+  d=data[ch][fn_hn];
+  if(!d) d=data[ch][fn_ip];
+  if(d=='0.0.0.0') d='';
+  l+='<td class="parinput">';
+  l+='<input type="text" name="'+fn_ip+ch+'" value="'+d+'" maxlength="62" onkeyup="okp(this)" />';
+  l+='</td>';
+ }
+ return l+'</tr>';
+}
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   l=x.length; if(l>f.len-2) l=f.len-2; // 16.05.2013, it was -1, now -2
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"#ffffff";
+ if(e) throw fld;
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function chk_ip(fld)
+{
+ ip=fld.value; e=false;
+ if(!(/^((\d{1,3})\.){3}(\d{1,3})$/).test(ip)) e=true;
+ else {
+  a=ip.split('.'); for(n in a) if(!a[n] || a[n]>255) e=true;
+ }
+ seterr(fld,e);
+ return a;
+}
+
+function chk_hn(fld)
+{
+ var a=fld.value;
+ a = a.replace(/^\s+|\s+$/g,''); // trim sp
+ if(a=='') 
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:''};
+ }
+ if((/^((\d{1,3})\.){3}(\d{1,3})$/).test(a))
+ {
+  var ipa=a.split('.'); 
+  for(n in ipa)
+  {
+   ipa[n] = parseInt(ipa[n]);
+   if(ipa[n]>255) 
+   {
+    seterr(fld_hn,1);
+    throw fld;
+   }    
+  }
+  seterr(fld,0);
+  return {ip:ipa,hn:a};
+ }
+ else
+ if((/^(?=.{1,62}$)([a-z0-9]+(-[a-z0-9]+)*)(\.[a-z0-9]+(-[a-z0-9]+)*)*$/i).test(a)) //domain name up to 62 chars, may be multi-label or just 1 label
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:a};
+ }
+ seterr(fld,1);
+ throw fld;
+}
+
+function chk_mac(fld)
+{
+ mac=fld.value;
+ ok=(/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i).test(mac);
+ seterr(fld,!ok);
+ mac=mac.split(':'); for(i in mac) mac[i]=parseInt(mac[i],16);
+ return mac;
+}
+
+genmask=[
+'0.0.0.0',
+'128.0.0.0',
+'192.0.0.0',
+'224.0.0.0',
+'240.0.0.0',
+'248.0.0.0',
+'252.0.0.0',
+'254.0.0.0',
+'255.0.0.0',
+'255.128.0.0',
+'255.192.0.0',
+'255.224.0.0',
+'255.240.0.0',
+'255.248.0.0',
+'255.252.0.0',
+'255.254.0.0',
+'255.255.0.0',
+'255.255.128.0',
+'255.255.192.0',
+'255.255.224.0',
+'255.255.240.0',
+'255.255.248.0',
+'255.255.252.0',
+'255.255.254.0',
+'255.255.255.0',
+'255.255.255.128',
+'255.255.255.192',
+'255.255.255.224',
+'255.255.255.240',
+'255.255.255.248',
+'255.255.255.252',
+'255.255.255.254',
+'255.255.255.255'
+];
+
+function chk_mask(fld)
+{
+ chk_ip(fld); m=fld.value;
+ for(i=0;i<=32;++i) if(genmask[i]==m) {seterr(fld,false); return i;}
+ seterr(fld,true);
+}
+
+function chkfrm(reboot)
+{
+  d={};
+  try{
+  f=document.frm_mib2;
+  if(f.hostname0.value) seterr(f.hostname0,!f.hostname0.value.match(/^[a-z0-9][a-z0-9\-]*[a-z0-9]$/i));
+  d.hostname=f.hostname0.value;
+  d.location=f.location0.value;
+  d.contact=f.contact0.value;
+  
+  f=document.frm_if;
+  ///d.mac=chk_mac(f.mac0);
+  d.ip=chk_ip(f.ip0); 
+  d.mask=chk_mask(f.mask0);
+  d.gate=chk_ip(f.gate0);
+  d.dns_ip1=chk_ip(f.dns_ip10);
+  d.http_port=range(f.http_port0,1,32767);
+  d.snmp_port=range(f.snmp_port0,1,32767);
+
+  f=document.frm_acc;
+  d.uname=f.uname0.value;
+  d.passwd=f.passwd0.value;
+  d.community_r=f.community_r0.value;
+  d.community_w=f.community_w0.value;
+  d.filt_ip1=chk_ip(f.filt_ip10);
+  d.filt_mask1=chk_mask(f.filt_mask10);
+  
+  f=document.frm_nf_disable;
+  d.nf_disable=f.nf_disable.checked?1:0;
+  
+  f=document.frm_trap;
+  q=chk_hn(f.trap_ip10); d.trap_ip1=q.ip; d.trap_hostname1=q.hn;
+  q=chk_hn(f.trap_ip20); d.trap_ip2=q.ip; d.trap_hostname2=q.hn;
+
+  f=document.frm_log;
+  q=chk_hn(f.syslog_ip10); d.syslog_ip1=q.ip; d.syslog_hostname1=q.hn;
+  ///d.syslog_ip2=chk_ip(f.syslog_ip20);
+  d.facility=range(f.facility0,0,23);
+  d.severity=range(f.severity0,0,7);
+  d.notification_email=data[0].notification_email; // legacy;pass unchanged
+  
+  f=document.frm_ntp; 
+  q=chk_hn(f.ntp_ip10); d.ntp_ip1=q.ip; d.ntp_hostname1=q.hn;
+  q=chk_hn(f.ntp_ip20); d.ntp_ip2=q.ip; d.ntp_hostname2=q.hn;  
+  d.timezone=range(f.timezone0,-12,12);
+  d.dst=f.dst0.checked?1:0; // 8.04.2013
+  
+  }catch(e){return false;}
+  
+  document.sender.data.value=pack(packfmt,d);
+  document.sender.action= reboot?"/ip_set.cgi":"setup_set.cgi";
+  document.sender.submit();
+  return false;
+}
+
+function chkfrm_rtc()
+{
+ var s=frm_rtc.newdate.value;
+ var d=s.match(/^([0-3][0-9])([0-1][0-9])([0-9]{4})([0-2][0-9])([0-5][0-9])([0-5][0-9])$/);
+ seterr(frm_rtc.newdate, !d);
+ //ddmmyyyyhhmmss
+ //new Date(yr,mon,day,hrs,min,sec,ms)
+ var ut=Date.UTC(d[3],parseInt(d[2])-1,d[1],d[4],d[5],d[6],0);
+ if(!ut) seterr(document.frm_rtc.newdate);
+ var tz=range(document.frm_ntp.timezone0,-12,12);
+ var dst=document.frm_ntp.dst0.checked;
+ ut=ut/1000-tz*3600-(dst?3600:0); // convert from TZ of netping to UTC
+ document.sender.data.value=hexb(tz)+hexb(dst?1:0)+hexb(ut,4);
+ document.sender.action="rtcset.cgi";
+ document.sender.submit();
+}
+
+</script>
+</head>
+
+<body>
+
+<script>
+menu('Setup');
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm_mib2" action="settings.html" method="post"  onsubmit="return chkfrm(0)">
+<h2 style="margin-top:10px">Device identification</h2>
+<table>
+<script>
+l='';
+l+=input('Device Hostname (only Latin letters, digits, \'-\')','hostname','maxlength="62" onkeyup="okp(this)"');
+l+=input('Device Location','location','maxlength="62" onkeyup="okp(this)"');
+l+=input('Contact','contact','maxlength="62" onkeyup="okp(this)"');
+document.write(l);
+</script>
+</table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+<form name="frm_if" action="settings.html" method="post"  onsubmit="return chkfrm(1)">
+<h2>Network Settings</h2>
+<table>
+<script>
+l='';
+///l+=input('MAC address','mac');
+l+=input('IP Address','ip');
+l+=input('Netmask','mask');
+l+=input('Gateway','gate');
+l+=input('DNS Server','dns_ip1');
+l+=input('Embedded HTTP Server Port','http_port');
+l+=input('SNMP Agent Port','snmp_port');
+document.write(l);
+</script>
+</table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+<form name="frm_acc" action="settings.html" method="post" onsubmit="return chkfrm(0)">
+<h2>Access restrictions</h2>
+<table>
+<tr>
+<script>
+l='';
+l+=input('Username','uname');
+l+='<tr><td class="parname">Password</td>'+
+'<td class="parinput"><input type="password" maxlength="16" name="passwd0" value="'+data[0].passwd+'"/></td></tr>';
+l+=input('SNMP Community for Read','community_r');
+l+=input('SNMP Community for Write','community_w');
+l+=input('IP Filter (access granted for this subnet)','filt_ip1');
+l+=input('IP Filter Netmask (0.0.0.0 - disable filter)','filt_mask1');
+document.write(l);
+</script>
+</table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+
+<form name="frm_nf_disable" id="frm_nf_disable_id" action="settings.html" method="post" onsubmit="return chkfrm(0)">
+<h2>Notifications</h2>
+<table>
+<tr>
+<td class="parname">Disable all notifications</td>
+<td class="parinput"><input type="checkbox" name="nf_disable" /></td>
+</tr>
+ </table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+
+<form name="frm_trap" action="settings.html" method="post" onsubmit="return chkfrm(0)">
+<h2>SNMP Trap</h2>
+<table>
+<script>
+l='';
+l+=input('SNMP Trap Destination #1','trap_ip1');
+l+=input('SNMP Trap Destination #2','trap_ip2');
+document.write(l);
+</script>   
+</table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+
+<script>
+if(hwmodel==51) frm_trap.style.display="none";
+</script>
+
+<form name="frm_log" action="settings.html" method="post" onsubmit="return chkfrm(0)">
+<h2>Syslog</h2>
+<table>
+<script>
+l='';
+l+=hn_input('SysLog Receiver Address','syslog_ip1','syslog_hostname1');
+///l+=input('SysLog Receiver Address #2', 'syslog_ip2');
+l+=input('Syslog Facility', 'facility');
+l+=input('Syslog Severity', 'severity');
+document.write(l);
+</script>   
+</table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+
+<form name="frm_ntp" action="settings.html" method="post" onsubmit="return chkfrm(0)">
+<h2>NTP Setup</h2>
+<table>
+<script>
+l='';
+l+=hn_input('NTP Server #1','ntp_ip1','ntp_hostname1');
+l+=hn_input('NTP Server #2','ntp_ip2','ntp_hostname2');
+l+=input('Timezone (-12..12)', 'timezone');
+document.write(l);
+</script>
+<tr>
+<td class="parname">Daylight Saving Time (DST)</td>
+<td class=parinput><input type="checkbox" name="dst0"/></td>
+</tr>
+</table>
+<div class="send_button_container">
+<input type="submit" value="Apply changes"/>
+</div>
+</form>
+
+<form name="frm_rtc" action="error.html" method="post" onsubmit="false">
+<h2>Embedded clock (RTC)</h2>
+<table>
+<tr>
+<td class="parname">Current Date and Time</td>
+<td class="parinput" id="now"></td>
+</tr>
+<tr>
+<td class="parname">New Date and Time (14 digits, format DDMMYYYYHHmmSS without spaces, 24h)</td>
+<td class="parinput"><input type="text" maxlength="14" name="newdate" /></td>
+</tr>
+</table>
+<div class="send_button_container">
+<input type="button" value="Set clock" onclick="chkfrm_rtc()"/>
+</div>
+</form>
+
+<script>
+var ts=document.getElementsByTagName('input');
+for(var i in ts) okp(ts[i]); // expand width
+document.frm_nf_disable.nf_disable.checked=data[0].nf_disable?true:false;
+document.frm_ntp.dst0.checked=(data[0].dst!=0);
+var clock=new Date((data_rtc+(data[0].timezone+(data[0].dst?1:0))*3600)*1000 - 1000); // constructor Date(n) arg-t is UTC!
+function tick()
+{
+ if(!clock) return;
+ clock.setTime(clock.getTime()+1000);
+ var hh=clock.getUTCHours();
+ var mm=clock.getUTCMinutes();
+ var ss=clock.getUTCSeconds();
+ var wd=clock.getUTCDay();
+ var nn=clock.getUTCMonth()+1;
+ if(hh<10) hh='0'+hh;
+ if(mm<10) mm='0'+mm;
+ if(ss<10) ss='0'+ss;
+ if(nn<10) nn='0'+nn;
+ getid('now').innerHTML=''+
+  clock.getUTCDate()+'.'+nn+'.'+clock.getUTCFullYear()+
+  '  '+hh+':'+mm+':'+ss;
+}
+tick();
+setInterval(tick,1000);
+</script>   
+
+<form name="sender" style="display:none" method="post" action="">
+<input type="hidden" name="data" />
+</form>
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

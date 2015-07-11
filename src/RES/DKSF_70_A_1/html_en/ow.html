@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="ow_get_addr_data.cgi"></script>
+</head>
+<body>
+<script>
+
+menu('Connection of the new 1-Wire sensors');
+
+function getid(a) { return document.getElementById(a); }
+
+</script>
+
+<div id="middle">
+<div id="push_margin" style="height:50px;"></div>
+<div style="text-align:center;">
+<h2>Reading of unique Id of 1-Wire sensor</h2>
+<script>
+if(typeof data == 'undefined')
+ document.write('<div class="alert" style="width:150px;margin:0px auto;">CGI error</div>');
+else if(data.addr=='0000 0000 0000 0000')
+ document.write('Nothing is attached to the 1-Wire bus; or more than one sensor is attached.<br/>Impossible to read unique Id of the sensor.');
+else
+ document.write('Uniqie Id of the 1-Wire sensor is:<br/><p style="color:green;">'+data.addr+'</p>');
+</script>
+<div class="note" style="width:450px;margin:30px auto;">
+Hit F5 to refresh page
+<br/>
+<br/>
+To read unique Id of the <span style="white-space: nowrap;">1-Wire</span> sensor, leave it the only one being attached to the bus, and disconnect all other sensors.
+To attach sensor to the system, copy and paste its unique Id from this page to the appropriate field on Temperature, Humidity pages.
+</div><!--note-->
+</div><!--center-->
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

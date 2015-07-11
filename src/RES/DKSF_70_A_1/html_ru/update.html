@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<style>
+#middle {text-align:center;}
+#holder {border:3px dashed #ccc;width:500px;height:80px;margin:20px auto;text-align:center;color:#01a85b;background-color:white;}
+#holder.hover {background-color: #eeeeee;}
+#dropname {font-weight:bold;}
+form {max-width:100%;text-align:center;}
+</style>
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+</head>
+<body>
+<script>
+/*
+//// DEBUGG
+var devname='Test UniPing';
+var fwver='v200.3.99.A';
+var hwmodel=200;
+var hwver=5;
+//
+*/
+
+//max size of .npu file
+var max_npu_size=550;
+
+if(typeof(menu)!='undefined')
+{
+  menu('Обновление прошивки');
+}
+else
+{
+var l='<div id="logo"><h1>NetPing</h1>';
+l+='Обновление прошивки';
+l+='</div>';
+l+='<div id="menu">';
+l+='<a href="index.html">Главная</a>';
+l+=' | <a href="settings.html">Настройки</a>';
+l+=' | <a href="update.html">Прошивка</a>';
+l+=' | <a href="log.html">Журнал</a>';
+l+='</div>';
+document.write(l);  
+}
+</script>
+<div id="middle">
+<div id="push_margin" style="height:1px"></div>
+<div id="holder">
+<p>
+Бросьте сюда файл обновления прошивки<br/>
+с расширением .npu
+</p>
+</div> 
+<p><span id="dropname"></span></p>
+<p class="note"><span id="status_drop"></span></p>
+<p class="note"><span id="status_fw"></span></p>
+<p class="note"><span id="status_reboot"></span></p>
+<p class="note"><span id="status_res"></span></p>
+<p class="note"><span id="status_final"></span></p>
+<form>
+<input type="button" id="update" value="Залить прошивку" disabled="" onclick="start_update()"/>
+</form>
+
+<script>
+function getid(id) {return document.getElementById(id);}
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+var holder=getid('holder'), 
+ status_drop=getid('status_drop'), 
+ status_fw=getid('status_fw'),
+ status_reboot=getid('status_reboot'),
+ status_res=getid('status_res'),
+ status_final=getid('status_final');
+ 
+var updatefile;
+
+if (typeof window.FileReader == 'undefined') 
+{
+ status_drop.innerHTML = 'FileReader API недоступно. Используйте современный браузер.';
+ status_drop.className = 'alert';
+} 
+ 
+function wrongfile()
+{
+ status_drop.innerHTML = 'Данный файл не содержит подходящую прошивку!';
+ status_drop.className = 'alert';
+ throw 0;
+}
+
+var fw_block_len=512;
+var jsstart=  '75hd95kuDbvf8y3k',
+    fwstart=  '85nxGT50Df31Pjhg',
+    fwend=    '9Bf782nHf760Dsa3',
+    resstart= 'Mnh73f0QgRt20w31',
+    resend=   'Po922BfSe0nm7F57';
+var req, fwcode, fwres, fwdata, fwoffs, update_phase;
+var jscode='';
+var reboot_timer, req_timeout;
+var ask_new_ver_attempt;
+
+function check_update(evt)//e is used in code! 24.07.14
+{
+  if(req) req.abort();
+  status_drop.innerHTML='';
+  status_drop.className='';
+  status_fw.innerHTML='';
+  status_fw.className='';
+  status_reboot.innerHTML='';
+  status_reboot.className='';
+  status_res.innerHTML='';
+  status_res.className='';
+  status_final.innerHTML='';
+  status_final.className='';
+  var abuf=evt.target.result, fwfile='', len;
+  for(n=0; n<abuf.byteLength; n+=512)
+  { 
+   len=n+512<=abuf.byteLength?512:abuf.byteLength-n;
+   fwfile+=String.fromCharCode.apply(null,new Uint8Array(abuf,n,len));
+  }
+  var s,e;
+  s=fwfile.lastIndexOf(jsstart);
+  if(s==-1) wrongfile();
+  jscode=fwfile.substring(s+16);
+  eval(jscode);
+  if(typeof(fw_is_compatible)!='function') wrongfile();
+  if(!fw_is_compatible()) 
+  {
+   status_drop.innerHTML = 'Прошивка в файле не подходит для данного устройства!';
+   status_drop.className = 'alert';
+   throw 3;
+  }
+  var newver=getid('dropname').innerHTML.match(/^.*dksf[\s_]*(\d+)\.(\d+)\.(\d+).*\.npu$/i);  
+  var oldver=fwver.split('.');
+  newver=newver[2]*100+newver[3]*1;
+  oldver=oldver[1]*100+oldver[2]*1;
+  if(newver<oldver)
+  {
+   status_drop.innerHTML = 'Не рекомендуется понижение версии прошивки! Пожалуйста, свяжитесь с <a style="color:white" href="mailto:support@netping.ru">support@netping.ru</a>';
+   status_drop.className = 'alert';
+  }
+  s=fwfile.indexOf(fwstart);
+  e=fwfile.indexOf(fwend);
+  if(s==-1 || e==-1) wrongfile();
+  fwcode=fwfile.substring(s+16,e);
+  s=fwfile.indexOf(resstart);
+  e=fwfile.indexOf(resend);
+  if(s==-1 || e==-1) wrongfile();
+  fwres=fwfile.substring(s+16,e);
+  getid('update').disabled=false;
+}
+
+function send_next_part()
+{
+ req.open('POST','/update_set.cgi',true);
+ var block=fwdata.substring(fwoffs,fwoffs+fw_block_len);
+ var len=block.length;
+ var hblock=[];
+ for(var i=0;i<len;++i) hblock[i]=hexb(block.charCodeAt(i));
+ hblock=hblock.join('');
+ req.onreadystatechange=check_req;
+ req_timeout=setTimeout(update_failed,10000);
+ req.send(hexb(0x0000deba,4)+hexb(fwoffs,4)+hexb(block.length,4)+hblock);
+ fwoffs+=fw_block_len;
+}
+
+function ask_new_version()
+{
+ clearTimeout(req_timeout);
+ req.abort();
+ req.open('GET','/devname.cgi',true);
+ req.onreadystatechange=check_req;
+ req_timeout=setTimeout(ask_new_version,10000);
+ req.send(null);
+ if(ask_new_ver_attempt>0) 
+  status_reboot.innerHTML='Повторная попытка установить связь с устройством ...';
+ ++ask_new_ver_attempt;
+}
+
+function progress()
+{
+ return ''+Math.round(fwoffs/fwdata.length*100)+'%';
+}
+
+function reboot_pause()
+{
+ status_reboot.innerHTML="Переход на новую прошивку, ожидание: "+reboot_timer+"с";
+ if(reboot_timer>0) 
+ { 
+  --reboot_timer;
+  setTimeout(reboot_pause,1000);
+ }
+ else
+ { 
+  ask_new_ver_attempt=0;
+  ask_new_version();
+ }
+}
+
+function update_failed()
+{
+ status_final.innerHTML='Сбой обновления прошивки!'; 
+ status_final.className='alert';
+ if(req) req.abort();
+}
+
+function check_req()
+{
+  if(req.readyState!=4) return;
+  clearTimeout(req_timeout);
+  if(req.status!=200) 
+  {
+    if(update_phase==2)
+    {
+      ask_new_version();
+    }
+    else
+    {
+      status_final.innerHTML='Сбой HTTP при обновлении прошивки!'; 
+      status_final.className='alert';
+    }
+    return;
+  }
+  switch(update_phase)
+  {
+  case 0:
+    status_fw.innerHTML='Загрузка кода прошивки: '+progress();
+    if(fwoffs < fwcode.length) 
+    { 
+     send_next_part();
+    }
+    else
+    {
+	   status_fw.innerHTML='Загрузка кода прошивки: 100%';
+     status_reboot.innerHTML="Рестарт прошивки..."; 
+     eval(jscode); // make fw_codecrc
+     req.open('POST','/update_set.cgi',true);
+     req.onreadystatechange=check_req;
+     req_timeout=setTimeout(update_failed,10000);     
+     req.send(hexb(0x0005deba,4)+hexb(fw_codecrc,4)+hexb(0,4)); // start reboot
+     update_phase=1;
+    }
+    break;
+  case 1:
+    reboot_timer=16; //s
+    reboot_pause();
+    update_phase = 2;
+    break;
+  case 2:
+    eval(req.responseText); // define new fw version from data, returned by ajax request
+    eval(jscode);
+    if(!fw_is_updated(fwver)) // fwver is local to this function, format 'v51.4.1.A-1'
+    { 
+      update_failed();
+    }
+    else
+    {
+     status_reboot.innerHTML='Переход на новый код прошивки успешно завершён';
+     status_res.innerHTML='Загрузка новых страниц вебинтерфейса: 0%';
+     update_phase=3;
+     fwdata=fwres;
+     fwoffs=0;
+     send_next_part();
+    }
+    break;
+  case 3:
+    status_res.innerHTML='Загрузка новых страниц вебинтерфейса: '+progress();
+    if(fwoffs < fwres.length) 
+    { 
+     send_next_part();
+    }
+    else
+    {
+	   status_res.innerHTML='Загрузка новых страниц вебинтерфейса: 100%';
+     status_final.innerHTML='Обновление прошивки успешно завершено!';
+    }
+    break;
+  }
+}
+
+function start_update()
+{
+ getid('update').disabled=true;
+ status_fw.innerHTML='Загрузка кода прошивки: 0%';
+ status_reboot.innerHTML='';
+ status_res.innerHTML='';
+ status_final.innerHTML='';
+ if(!req) req=new XMLHttpRequest();
+ else req.abort();
+ update_phase=0; 
+ fwdata=fwcode;
+ fwoffs=0;
+ send_next_part();
+}
+
+holder.ondragover = function () { this.className = 'hover'; return false; };
+holder.ondragleave = function () { this.className = ''; return false; };
+holder.ondragend = function () { this.className = ''; return false; };
+holder.ondrop = function (e) 
+{
+  this.className = '';
+  e.preventDefault();
+  var f=e.dataTransfer.files[0];
+  getid('dropname').innerHTML=f.name;  
+  if(f.size > max_npu_size*1024) wrongfile();
+  var reader = new FileReader();
+  reader.onerror = function()
+  {
+   alert('Ошибка чтения файла '+reader.error.code);
+  }
+  reader.onload = check_update;
+  //reader.readAsBinaryString(f);
+  //reader.readAsText(f,"x-user-defined"); // 25.07.2014
+  reader.readAsArrayBuffer(f);
+  return false;
+};
+
+</script>
+</div><!--middle-->
+<div id="footer">&copy;&nbsp</div>
+</body>
+</html>

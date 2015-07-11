@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="logic_get.cgi"></script>
+<script src="tstat_get.cgi"></script>
+<script src="pinger_get.cgi"></script>
+<script src="setter_get.cgi"></script>
+<style>
+body {min-width:900px;}
+table {width:800px;}
+td,th {border-top:none;}
+th {text-align:right;}
+tr.noborder td {border:none;}
+.parname {width:auto;}
+select {width:100%;}
+input[type="text"], input[type="password"] {width:100%;}
+.status {text-align:right;}
+.logicstatus {text-align:right;color:#009020;}
+</style>
+</head>
+<body>
+<script>
+
+/*
+///DEBUG
+var devname="Test NetPing";
+var sys_name='Test';
+var sys_location='Test';
+var hwmodel=52,hwver=5;
+var data_logic_flags=0;
+var data=[
+{flags:1,input:0x10,condition:1,action:0,output:0xa0},
+{flags:1,input:0x11,condition:1,action:0,output:0xa1},
+{flags:0,input:0x10,condition:1,action:0,output:0xa0},
+{flags:0,input:0x10,condition:1,action:0,output:0xa0}
+];
+var pinger_data=[
+{ip:'0.0.0.0',hostname:'',period:10,timeout:1000},
+{ip:'0.0.0.0',hostname:'www.example.example.net',period:10,timeout:1000}
+];
+var termo_n_ch=8;tstat_data=[
+{now:20,setpoint:22,hyst:2,sensor_no:6},
+{now:21,setpoint:22,hyst:2,sensor_no:7}
+];
+var setter_data=[
+{name:'',ip:'1.1.1.10',port:161,mib:'1.3.4.6.25685.3.6.0',community:'SWITCH',valueon:1,valueoff:0},
+{name:'',ip:'1.1.1.10',port:161,mib:'1.3.4.6.25685.3.7.0',community:'SWITCH',valueon:1,valueoff:0}
+];
+///
+*/
+
+menu('Локальная логика');
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e) //v3
+{
+ fld.style.backgroundColor=e?"#ffaaaa":""; // v3 retain default BG
+ if(e) throw fld;
+}
+
+function chkrange(fn,a,b)
+{
+ var f=document.frm[fn];
+ v=parseInt(f.value);
+ seterr(f, v!=f.value||isNaN(v)||v<a||v>b);
+ return v;
+}
+
+function chk_oid(f)
+{
+ if(!(/^\.1\.3(\.\d*)+$/g).test(f.value)) seterr(f,1);
+ return f.value;
+}
+
+function chk_ip(fld)
+{
+ ip=fld.value; e=false;
+ if(ip=='') ip='0.0.0.0'; // 13.09.2011
+ if(!(/^((\d{1,3})\.){3}(\d{1,3})$/).test(ip)) e=true;
+ else {
+ a=ip.split('.'); for(n in a) if(!a[n] || a[n]>255) e=true;
+ }
+ seterr(fld,e);
+ return a;
+}
+
+function chk_hn(fld)
+{
+ var a=fld.value;
+ a = a.replace(/^\s+|\s+$/g,''); // trim sp
+ if(a=='') 
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:''};
+ }
+ if((/^((\d{1,3})\.){3}(\d{1,3})$/).test(a))
+ {
+  var ipa=a.split('.'); 
+  for(n in ipa)
+  {
+   ipa[n] = parseInt(ipa[n]);
+   if(ipa[n]>255) 
+   {
+    seterr(fld_hn,1);
+    throw fld;
+   }    
+  }
+  seterr(fld,0);
+  return {ip:ipa,hn:a};
+ }
+ else
+ if((/^(?=.{1,62}$)([a-z0-9]+(-[a-z0-9]+)*)(\.[a-z0-9]+(-[a-z0-9]+)*)*$/i).test(a)) //domain name up to 62 chars, may be multi-label or just 1 label
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:a};
+ }
+ seterr(fld,1);
+ throw fld;
+}
+
+function header(label, name, n_ch)
+{
+ var i,l='';
+ l+='<tr><th>&nbsp;</th>';
+ for(i=0;i<n_ch;++i) l+='<th>'+name+(i+1)+'</th>';
+ l+='</tr>';  
+ return l;
+}
+
+function txtfield(label, name, n_ch, aux)
+{
+ var l='';
+ if(!aux) aux='';
+ l+='<tr><td class="parname">'+label+'</td>';
+ for(var i=0;i<n_ch;++i) l+='<td><input type="text" name="'+name+i+'" '+aux+'/></td>';
+ l+='</tr>';
+ return l;
+}
+
+function addr_input(label, fld_name_addr, data) // using fixed ip, hostname data fields
+{
+ var d,l='<tr><td class="parname">'+label+'</td>';
+ for(ch=0;ch<data.length;++ch)  
+ {
+  d=data[ch].hostname;
+  if(!d) d=data[ch].ip;
+  if(d=='0.0.0.0') d='';
+  l+='<td>';
+  l+='<input type="text" name="'+fld_name_addr+ch+'" value="'+d+'" maxlength="62"/>';
+  l+='</td>';
+ }
+ return l+'</tr>';
+}
+
+var rule_type={
+0:'Пока',
+1:'Если'
+};
+
+var inputs={
+0x01:'RESET',
+0x10:'IO 1',
+0x11:'IO 2',
+0x12:'IO 3',
+0x13:'IO 4',
+0x20:'TSTAT 1',
+0x21:'TSTAT 2',
+0x30:'PINGER 1',
+0x31:'PINGER 2',
+0x40:'CS ALARM',
+0x50:'CS FAIL',
+0x60:'CS NORM'
+};
+
+var conditions = [
+{ // RESET
+0:'= лог. 0',
+1:'= лог. 1'
+},
+{ // IO
+0:'= лог. 0',
+1:'= лог. 1'
+},
+{ // TSTAT
+0:'ниже заданной T',
+1:'выше заданной T'
+},
+{ // PINGER
+0:'молчит',
+1:'отвечает'
+},
+{ // C.S.ALARM
+0:'= лог. 0',
+1:'= лог. 1'
+},
+{ // C.S.FAIL
+0:'= лог. 0',
+1:'= лог. 1'
+},
+{ // C.S.NORM
+0:'= лог. 0',
+1:'= лог. 1'
+}
+];
+
+var actions = [
+{0:'держать выкл',
+ 1:'держать вкл'},
+{0:'выключить',
+ 1:'включить',
+ 2:'переключить'}
+];
+
+var outputs={
+0xa0:'IO 1',
+0xa1:'IO 2',
+0xa2:'IO 3',
+0xa3:'IO 4',
+0xb0:'RELAY 1',
+0xc0:'SNMP 1',
+0xc1:'SNMP 2',
+0xd0:'IR 1',
+0xd1:'IR 2',
+0xd2:'IR 3',
+0xd3:'IR 4',
+0xe0:'CS PWR'
+};
+
+function chof(node)
+{
+ var ch;
+ for(;;)
+ {
+  if(!node) return '';
+  ch=node.getAttribute('ch');
+  if(ch) return parseInt(ch);
+  node=node.parentNode;
+ }
+}
+
+function activechanged(cb)
+{
+ with(data[chof(cb)]) { if(cb.checked) flags |= 1; else flags &=~ 1; }
+ writelogic();
+}
+
+function triggerchanged(sel)
+{
+ with (data[chof(sel)]) if(parseInt(sel.value)) flags |= 2; else flags &=~ 2; 
+ writelogic();
+}
+
+function inputchanged(sel)
+{
+ data[chof(sel)].input=parseInt(sel.value); 
+ writelogic();
+}
+
+function conditionchanged(sel)
+{
+ data[chof(sel)].condition=parseInt(sel.value);
+}
+
+function actionchanged(sel)
+{
+ data[chof(sel)].action=parseInt(sel.value);
+ writelogic();
+}
+
+function outputchanged(sel)
+{
+ data[chof(sel)].output=parseInt(sel.value);
+}
+
+function options(opts,sel,dis)
+{
+ var k,l='';
+ if(!dis) dis={};
+ for(k in opts) l+='<option'+(k==sel?' selected=""':'')+( (k&0xf0) in dis ?' disabled=""':'' )+' value="'+k+'">'+opts[k]+'</option>';
+ return l;
+}
+
+function writerule(i)
+{
+ var d=data[i], l='', dis='disabled=""';
+ var ena=d.flags&1?'':dis;
+ var istrigger=d.flags&2?1:0;
+ l+='<tr ch="'+i+'">';
+ l+='<td style="font-weight:bold">'+(parseInt(i)+1)+'</td>';
+ l+='<td><input type="checkbox" '+(d.flags&1?'checked=""':'')+' onclick="activechanged(this)"/></td>';
+ l+='<td><select '+ena+' onchange="triggerchanged(this)">'+options(rule_type,istrigger?1:0)+'</select></td>';
+ l+='<td><select '+ena+' onchange="inputchanged(this)">'+options(inputs,d.input)+'</select></td>';
+ l+='<td><select '+ena+' onchange="conditionchanged(this)">'+options(conditions[(d.input>>4)/*-1 now RESET! */],d.condition)+'</select></td>';
+ l+='<td><select '+ena+' onchange="actionchanged(this)">'+options(actions[istrigger],d.action)+'</select></td>';
+ var out_mask={};
+ if(istrigger==0) out_mask[0xc0]=null; // no while ... hold ... for snmp
+ if(!((istrigger && d.action==1) || (!istrigger && d.action==0))) out_mask[0xd0]=null; // only switch on and hold off for ir
+ l+='<td><select id="output'+i+'" '+ena+' onchange="outputchanged(this)">'+options(outputs,d.output,out_mask)+'</select></td>';
+ l+='<td>';
+ l+='<input style="width:50%" type="button" value="выше" onclick="reorder('+i+',-1)" '+(i==0?dis:'')+'/>';
+ l+='<input style="width:50%" type="button" value="ниже" onclick="reorder('+i+',+1)" '+(i==data.length-1?dis:'')+'/>';
+ l+='</td>';
+ l+='</tr>\n'; 
+ return l;
+}
+
+function writelogic()
+{
+ var l=
+ '<table>'+
+ '<caption align="bottom" class="send_button_container">'+
+ '<input type="button" value="Reset" onclick="logicrun(2)"/>&nbsp;'+
+ '<input type="button" id="run"  value="Пуск" onclick="logicrun(1)"/>&nbsp;'+
+ '<input type="button" id="stop" value="Стоп" onclick="logicrun(0)"/>&nbsp;'+
+ '&nbsp;&nbsp;&nbsp;'+
+ '<input type="button" value="Применить изменения" onclick="chkfrm_logic()"/>'+
+ '</caption>'+
+ '<tbody>';
+ for(var i in data) l+=writerule(i);
+ l+=
+ '</tbody>'+
+ '</table>';
+ getid('div_rules').innerHTML=l;
+}
+
+function reorder(n,dir)
+{
+ var m=n+dir;
+ if(m<0) m=0;
+ if(m>data.length-1) m=data.length-1;
+ var d=data[m]; 
+ data[m]=data[n]; 
+ data[n]=d;
+ writelogic();
+}
+
+function chkfrm_logic()
+{
+ var d,txt='',istrigger,active;
+ for(var n in data) 
+ {
+  d=data[n];
+  active=d.flags&1;
+  istrigger=d.flags&2;
+  if(active)
+  {
+   if(d.input==0x01 && d.action==2)
+   {
+    alert('Для сброса (RESET) невозможно выбрать действие "переключить". Сохранение невозможно. Измените правило '+(parseInt(n)+1)+' или деактивируйте его.');
+    return;
+   }
+   if((d.output&0xf0) == 0xd0)
+   {
+    if(!((istrigger && d.action==1) || (!istrigger && d.action==0)))
+    {
+     alert('Для ИК команды применимы только действия "включить" и "держать выкл". Сохранение невозможно. Измените правило '+(parseInt(n)+1)+' или деактивируйте его.');
+     return;
+    }
+   }
+   if((d.output&0xf0) == 0xc0)
+   {
+    if(istrigger==0)
+    {
+     alert('Для SNMP команды недопустимы условия "пока" и действия "держать". Сохранение невозможно. Измените правило '+(parseInt(n)+1)+' или деактивируйте его.');
+     return;
+    }
+   }
+  }
+  txt+=pack(packfmt,d);
+ }
+ document.sender.data.value=txt;
+ document.sender.action='/logic_set.cgi';
+ document.sender.submit();
+}
+
+function chkfrm_tstat()
+{
+ var d='',f={};
+ for(var n in tstat_data) 
+ {
+  f.sensor_no=document.frm['tstat_sensor_no'+n].selectedIndex;
+  f.setpoint=(f.sensor_no==termo_n_ch?chkrange('tstat_setpoint'+n,0,100):chkrange('tstat_setpoint'+n,-70,150));
+  f.hyst=chkrange('tstat_hyst'+n,1,8);
+
+  d+=pack(tstat_packfmt,f);
+ }
+ document.sender.data.value=d;
+ document.sender.action='/tstat_set.cgi';
+ document.sender.submit();
+}
+
+function chkfrm_pinger()
+{
+ var d='',f={},q;
+ for(var n in pinger_data) 
+ {
+  //f.ip=chk_ip(document.frm['ip'+n]);
+  q=chk_hn(document.frm['pinger_addr'+n]); f.ip=q.ip; f.hostname=q.hn;
+  f.period=chkrange('pinger_period'+n,5,900);
+  f.timeout=chkrange('pinger_timeout'+n,100,10000);
+  d+=pack(pinger_packfmt,f);
+ }
+ document.sender.data.value=d;
+ document.sender.action='/pinger_set.cgi';
+ document.sender.submit();
+}
+
+function chkfrm_setter()
+{
+ var d='',f={},q;
+ for(var n in setter_data) 
+ {
+  f.name=document.frm['setter_name'+n].value;
+  //f.ip=chk_ip(document.frm['setter_ip'+n]);
+  q=chk_hn(document.frm['setter_addr'+n]); f.ip=q.ip; f.hostname=q.hn;
+  f.port=chkrange('setter_port'+n,0,65535);
+  f.oid=chk_oid(document.frm['setter_oid'+n]);
+  f.community=document.frm['setter_community'+n].value;
+  f.value_on=chkrange('setter_value_on'+n,-2147483648,2147483647);
+  f.value_off=chkrange('setter_value_off'+n,-2147483648,2147483647);
+  d+=pack(setter_packfmt,f);
+ }
+ document.sender.data.value=d;
+ document.sender.action='/setter_set.cgi';
+ document.sender.submit();
+}
+
+function show_logic_status(run) 
+{
+ getid('run').disabled = run;
+ getid('stop').disabled = !run;
+ getid('logicstatus').innerHTML = run ? '' : 'остановлена (неактивна)' ;
+}
+
+var runreq = new XMLHttpRequest();
+
+function runreq_onload() 
+{
+ with(runreq) 
+  if(readyState==4 && status == 200 && responseText!='')
+   show_logic_status(responseText=='1');
+};
+
+function logicrun(flag)
+{
+ runreq.abort();
+ runreq.open("GET","/logic_run.cgi?"+flag,true);
+ runreq.onreadystatechange=runreq_onload;
+ runreq.send(null);
+}
+
+var setreq = new XMLHttpRequest();
+var status_interval;
+
+function setter_test(n,onoff)
+{
+ var f=document.frm;
+ with(setter_data[n])
+ {
+  if(f['setter_name'+n].value!=name
+  || f['setter_addr'+n].value!=hostname /*domain or ip as text*/
+  || f['setter_port'+n].value!=port
+  || f['setter_oid'+n].value!=oid
+  || f['setter_community'+n].value!=community
+  || f['setter_value_on'+n].value!=value_on
+  || f['setter_value_off'+n].value!=value_off )
+  {
+   alert("Сохраните изменения перед тестированием!");
+   return;
+  }
+ }
+ clearInterval(status_interval); 
+ setreq.abort();
+ setreq.open("GET","/setter_test.cgi?ch"+((n&7)+1)+"="+onoff);
+ setreq.send(null);
+ getid('setter_status'+n).innerHTML=setter_status_txt[6];//'waiting ror reply'
+ clearInterval(status_interval);
+ status_interval=setInterval(send_status_req,15000); 
+ setTimeout(send_status_req,5000);
+}
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm" method="post" action="error.html">
+
+<table>
+<tr class="noborder">
+<td><h2>Логика</h2></td>
+<td class="logicstatus" id="logicstatus"></td>
+</tr>
+</table>
+
+<div id="div_rules"></div>
+
+<script>
+writelogic();
+show_logic_status(data_logic_flags&0x80);
+</script>
+
+<h2>Термо(гигро)стат</h2>
+<table>
+<caption align="bottom" class="send_button_container">
+<input type="button" value="Применить изменения" onclick="chkfrm_tstat()"/>
+</caption>
+<colgroup>
+<col style="width:260px"/>
+<col style="width:220px"/>
+<col style="width:220px"/>
+<col />
+</colgroup>
+<script>
+var i,n=tstat_data.length,l='';
+l+=header('', 'TSTAT ', n);
+l+='<tr><td class="parname">Датчик</td>';
+for(i in tstat_data) 
+{
+ l+='<td><select name="tstat_sensor_no'+i+'">';
+ for(var j=0;j<termo_n_ch;++j) l+='<option>'+(j+1)+'</option>';
+ l+='<option>Отн.влажность</option>';
+ l+='</select></td>';
+}
+l+='</tr><tr>';
+l+='<td  class="parname">Текущее значение, град.С или % отн.влажн.</td>';
+for(i in tstat_data) l+='<td class="status" id="tstat_now'+i+'">-</td>';
+l+='</tr>';
+l+=txtfield('Порог, град.С или % отн.влажн.','tstat_setpoint',n);
+l+=txtfield('Гистерезис переключения, 1..8 град.С или % отн.влажн.','tstat_hyst',n);
+l+='</tr><tr>';
+l+='<td class="parname">Статус</td>';
+for(i in tstat_data) l+='<td class="status" id="tstat_status'+i+'">-</td>';
+l+='</tr>';
+document.write(l);
+for(i in tstat_data) with(tstat_data[i])
+{
+ document.frm['tstat_setpoint'+i].value=setpoint;
+ document.frm['tstat_hyst'+i].value=hyst;
+ document.frm['tstat_sensor_no'+i].selectedIndex=sensor_no;
+}
+</script>
+</table>
+
+<h2>Пингер</h2>
+<table>
+<caption align="bottom" class="send_button_container">
+<input type="button" value="Применить изменения" onclick="chkfrm_pinger()"/>
+</caption>
+<colgroup>
+<col style="width:260px"/>
+<col style="width:220px"/>
+<col style="width:220px"/>
+<col />
+</colgroup>
+<script>
+var i,n=pinger_data.length,l='';
+l+=header('', 'PINGER ', n);
+//l+=txtfield('Ip адрес','ip',n);
+l+=addr_input('Адрес','pinger_addr',pinger_data);
+l+=txtfield('Период опроса, с (5-900)','pinger_period',n);
+l+=txtfield('Таймаут одного пинга, мс (100-10000)','pinger_timeout',n);
+l+='<td class="parname">Статус</td>';
+for(i in pinger_data) l+='<td class="status" id="pinger_status'+i+'">-</td>';
+l+='</tr>';
+document.write(l);
+for(var i in pinger_data) with(pinger_data[i])
+{
+ //document.frm['pinger_ip'+i].value=ip; //value set in addr_input()
+ document.frm['pinger_period'+i].value=period;
+ document.frm['pinger_timeout'+i].value=timeout;
+}
+</script>
+</table>
+
+<h2>SNMP SETTER</h2>
+<table>
+<caption align="bottom" class="send_button_container">
+<input type="button" value="Применить изменения" onclick="chkfrm_setter()"/>
+</caption>
+<colgroup>
+<col style="width:260px"/>
+<col style="width:220px"/>
+<col style="width:220px"/>
+<col />
+</colgroup>
+<script>
+var i,n=setter_data.length,l='';
+l+=header('', 'SNMP ', n);
+l+=txtfield('Памятка','setter_name',n,'maxlength="30" style="color:#009020"');
+//l+=txtfield('Ip адрес','setter_ip',n);
+l+=addr_input('Адрес','setter_addr',setter_data);
+l+=txtfield('Порт','setter_port',n);
+l+=txtfield('OID (.1.3.6...)','setter_oid',n);
+l+='<tr><td class="parname">Community</td>';
+for(var i in setter_data) 
+ l+='<td><input type="password" name="setter_community'+i+'"/></td>';
+l+='</tr>';
+l+=txtfield('Значение "Вкл" (тип Integer32)','setter_value_on',n);
+l+=txtfield('Значение "Выкл" (тип Integer32)','setter_value_off',n);
+l+='<tr><td class="parname">Проверка</td>';
+for(i in setter_data) 
+ l+='<td><input style="width:50%" type="button" value="Вкл" onclick="setter_test('+i+',1)"/>'+
+        '<input style="width:50%" type="button" value="Выкл" onclick="setter_test('+i+',0)"/></td>';
+l+='</tr><tr>';
+l+='<td class="parname">Статус</td>';
+for(i in setter_data) l+='<td class="status" id="setter_status'+i+'">-</td>';
+l+='</tr>';
+document.write(l);
+for(n in setter_data) with(setter_data[n])
+{
+ frm['setter_name'+n].style.color="#009020";
+ frm['setter_name'+n].value=name;
+ //frm['setter_ip'+n].value=ip; // is set in input_addr()
+ frm['setter_port'+n].value=port;
+ frm['setter_oid'+n].style.fontSize="80%";
+ frm['setter_oid'+n].value=oid;
+ frm['setter_community'+n].value=community;
+ frm['setter_value_on'+n].value=value_on;
+ frm['setter_value_off'+n].value=value_off;
+}
+</script>
+</table>
+
+</form>
+
+<script>
+var tstat_status=[], pinger_status=[], setter_status=[];
+var pinger_status_txt={0:'молчит',1:'отвечает',2:'отвечает со сбоями',0xfe:'-',0xff:'-'};
+var setter_status_txt={0:'OK',1:'слишком большое',2:'нет такого OID',3:'неправильное значение',4:'запись запрещена',5:'ошибка',6:'ожидание ответа',7:'таймаут',8:'ошибка DNS',9:'отсутствует адрес'};
+var req = new XMLHttpRequest();
+
+function req_onload()
+{
+ if(req.readyState!=4) return;
+ var ok = (req.status==200 && req.responseText!='');
+ if(ok) eval(req.responseText); // renders tstat_status, pinger_status
+ var n,s,d,stat,t;
+ for(n in tstat_status) 
+ {
+  if(ok)
+  {
+   s=tstat_status[n]; d=tstat_data[n];
+   if(s.t_status==0xfe)   { stat='сбой датчика'; t='-'; }
+   else if(s.t_status==0) { stat='ниже (порог '+(d.setpoint+d.hyst)+')'; t=s.t_val; }
+   else if(s.t_status==1) { stat='выше (порог '+(d.setpoint-d.hyst)+')'; t=s.t_val; }
+   else { stat='-'; t='-'; }
+  }
+  else
+  {
+   stat='сбой http'; 
+   t='-';
+  }
+  getid('tstat_status'+n).innerHTML=stat;
+  getid('tstat_now'+n).innerHTML=t;
+ }
+ for(n in pinger_status)
+ {
+  stat= ok ? pinger_status_txt[pinger_status[n]] : '-' ;
+  getid('pinger_status'+n).innerHTML=stat;
+ }
+ for(n in setter_status)
+ {
+  stat=setter_status_txt[setter_status[n]];
+  if(!stat) stat='-';
+  getid('setter_status'+n).innerHTML=stat;
+ }
+};
+
+function send_status_req()
+{
+ req.abort();
+ req.open("GET","/logic_status.cgi",true);
+ req.onreadystatechange=req_onload;
+ req.timeout=8000;
+ req.send(null);
+}
+
+//setTimeout(send_status_req,5000);
+send_status_req();
+status_interval=setInterval(send_status_req,15000); 
+</script>
+
+<form name="sender" style="display:none" method="post" action="logic_set.cgi">
+<input type="hidden" name="data" />
+</form>
+</div> <!-- middle -->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

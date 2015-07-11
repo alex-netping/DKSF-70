@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="sms_get.cgi"></script>
+<style>
+input {width:200px;}
+input[type="radio"], input[type="checkbox"] {width:auto;}
+form {max-width:900px;}
+</style>
+<script>
+/*
+//////// DEBUGGGG
+var devname="Test NetPing GSM";
+var hwmodel=70;
+var data=[{dest_phone0:"+79133331122",dest_phone1:"",dest_phone2:"",dest_phone3:"",ussd_string:"*100#",event_mask:0,pinger_ip:'0.0.0.0',pinger_period:30,flags:0,pinger_hostname:"",periodic_time:"",last_gsm_error:'+CMS ERROR: SIM not inserted' }];
+sys_name='test-netping';
+sys_location='';
+sys_contact='';
+////////////////
+*/
+
+var smsevents=[
+//{lbl:'Переход на резервное питание, разряд акумулятора', mask:0x0004}, // нет аккумулятора
+{lbl:'Ethernet link status change', mask:0x0002},
+{lbl:'Watchdog events', mask:0x0001},
+{lbl:'Pinger status change', mask:0x0008},
+];
+
+var waiting='<span style="color:#888888">waiting data...</span>';
+
+var creg_status={
+0:'Registration Impossible',
+1:'Registered in Home Network',
+2:'Searching Network',
+3:'Network Registration Denied',
+4:'?',
+5:'Registered, ROAMING ', 
+254:'Unrecoverable Error, SMS functions disabled',
+255:'-'
+};
+
+function getid(id) {return document.getElementById(id);}
+
+function okp(fld)
+{
+ if(fld.type!='text') return;
+ var w=fld.value.length+5;
+ if(w<20) w=20;
+ fld.size=w;
+}
+
+function input(label, name)
+{
+  var l='<tr>';
+  l+='<td class="parname">'+label+'</td>';
+  for(n in data) l+='<td class="parinput"><input type="text" name="'+name+n+'" value="'+data[n][name]+'"/></td>';
+  l+="</tr>";
+  return l;
+}
+
+function hn_input(label, fn_ip, fn_hn)
+{
+ var d,l='<tr><td class="parname">'+label+'</td>';
+ for(ch in data)  
+ {
+  d=data[ch][fn_hn];
+  if(!d) d=data[ch][fn_ip];
+  if(d=='0.0.0.0') d='';
+  l+='<td class="parinput">';
+  l+='<input type="text" name="'+fn_ip+ch+'" value="'+d+'" maxlength="62" onkeyup="okp(this)" />';
+  l+='</td>';
+ }
+ return l+'</tr>';
+}
+
+function chk_hn(fld)
+{
+ var a=fld.value;
+ a = a.replace(/^\s+|\s+$/g,''); // trim sp
+ if(a=='') 
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:''};
+ }
+ if((/^((\d{1,3})\.){3}(\d{1,3})$/).test(a))
+ {
+  var ipa=a.split('.'); 
+  for(n in ipa)
+  {
+   ipa[n] = parseInt(ipa[n]);
+   if(ipa[n]>255) 
+   {
+    seterr(fld_hn,1);
+    throw fld;
+   }    
+  }
+  seterr(fld,0);
+  return {ip:ipa,hn:a};
+ }
+ else
+ if((/^(?=.{1,62}$)([a-z0-9]+(-[a-z0-9]+)*)(\.[a-z0-9]+(-[a-z0-9]+)*)*$/i).test(a)) //domain name up to 62 chars, may be multi-label or just 1 label
+ {
+  seterr(fld,0);
+  return {ip:[0,0,0,0],hn:a};
+ }
+ seterr(fld,1);
+ throw fld;
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+ if(e) throw fld;
+}
+
+function chkfrm()
+{
+  var d={},f;
+  try{
+  ////d.hostname=frm_gsm.hostname0.value;
+  f=document.frm_gsm;
+  d.dest_phone0=f.dest_phone00.value;
+  d.dest_phone1=f.dest_phone10.value;
+  d.dest_phone2=f.dest_phone20.value;
+  d.dest_phone3=f.dest_phone30.value;
+  d.ussd_string=f.ussd_string0.value;
+  d.event_mask=0;
+  d.flags=data[0].flags;
+  if(getid('gsm_log').checked) d.flags|=0x8000; else d.flags&=~0x8000; // SMS_DEBUG_LOG
+  for(v in smsevents)  with(smsevents[v])
+  {
+    cb=getid('events'+mask);
+    if(!cb) continue;
+    if(cb.checked) d.event_mask|=mask;
+  }
+  var a=chk_hn(frm_pinger.pinger_ip0); d.pinger_ip=a.ip; d.pinger_hostname=a.hn;
+  d.pinger_period=range(frm_pinger.pinger_period0,30,9999);
+  var pt=document.frm_periodic.periodic_time0;
+  if(pt.value!='')
+   seterr(pt, !pt.value.match(/^\s*([0-2][0-9]:[0-5][0-9])?(\s+[0-2][0-9]:[0-5][0-9])*\s*$/));
+  d.periodic_time=pt.value;
+  }catch(e){return false;} 
+  document.sender.data.value=pack(packfmt,d);
+  document.sender.submit();
+  return false;
+}
+
+var req = new XMLHttpRequest();
+var reqtimer;
+var watchtimer;
+var requested_info=0;
+
+function no_responce()
+{
+ clearInterval(watchtimer);
+ req.abort();
+ requested_info=0;
+ disable_buttons(false);
+}
+
+function responce()
+{
+ clearTimeout(reqtimer);
+ clearInterval(watchtimer);
+ disable_buttons(false);
+ var err='<span style="color:#888888">HTTP Error</span>'; // minor bug 24.1.2011
+ switch(requested_info)
+ {
+ case 1: f=getid('creg'); break;
+ case 2: f=getid('ussd_responce'); break;
+ default: return;
+ }
+ var d=req.responseText;
+ if(req.status!=200 || !d || d=='') { f.innerHTML=err;  return; }
+ d=eval(d);
+ if(!d) { f.innerHTML=err;  return; }
+ switch(requested_info)
+ {
+ case 1:
+  getid('creg').innerHTML = d.creg in creg_status ? creg_status[d.creg] : '-';
+  var sig;
+  if(d.sig_level==99) sig='нет сигнала';
+  else if(d.sig_level==255) sig='-';
+  else sig=''+Math.round(d.sig_level/32*100)+'%';
+  getid('sig_level').innerHTML=sig;
+  break;
+ case 2:
+  var txt=d.ussd_responce;
+  txt=txt.replace(/\r\n/g,'\n');
+  txt=txt.replace(/\r/g,'\n');
+  txt=txt.replace(/\n/g,'<br/>'); 
+  getid('ussd_responce').innerHTML=txt;
+  break;
+ }
+}
+
+function watch() {if(req.readyState==4) responce();}
+
+function request(addr)
+{
+ req.abort();
+ req.open("GET",addr,true);
+ req.send();
+ reqtimer=setTimeout(no_responce,5990);
+ watchtimer=setInterval(watch,200);
+}
+
+function get_stat()
+{
+ disable_buttons(true);
+ req.abort();
+ req.open("GET",'/sms_stat_i.cgi',true);
+ req.send();
+ requested_info=1;
+ setTimeout("request('/sms_stat.cgi')",7000);
+ getid('creg').innerHTML=waiting;
+ getid('sig_level').innerHTML=waiting;
+}
+
+function get_ussd()
+{
+ disable_buttons(true);
+ req.abort();
+ req.open("GET",'/sms_ussd_i.cgi',true);
+ req.send();
+ requested_info=2;
+ setTimeout("request('/sms_ussd.cgi')",17000);
+ getid('ussd_responce').innerHTML=waiting;
+}
+
+function disable_buttons(state)
+{
+ getid('stat_button').disabled=state;
+ getid('ussd_button').disabled=state;
+}
+
+</script>
+</head>
+
+<body>
+<script>
+menu('GSM setup for SMS notification and control');
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm_gsm" action="/error.html" method="post">
+<h2>GSM Setup</h2>
+<table>
+<script>
+l='';
+//l+=input('Имя устройства для идентификации отправляемых SMS, до 30 латинских символов','hostname');
+var ph_txt='Destination Phone Number for SMS, ';
+l+=input(ph_txt+'Main','dest_phone0');
+l+=input(ph_txt+'Aux 1','dest_phone1');
+l+=input(ph_txt+'Aux 2','dest_phone2');
+l+=input(ph_txt+'Aux 3','dest_phone3');
+l+=input('USSD Command for request of GSM account status','ussd_string');
+document.write(l);
+</script>
+<tr>
+<td class="parname">Log communication with GSM modem (troubleshooting)</td>
+<td class="parinput"><input type="checkbox" id="gsm_log" /></td>
+</tr>
+</table>
+<div class="send_button_container">
+<input type="button" value="Apply changes" onclick="chkfrm()"/>
+</div>
+</form>
+
+<form name="frm_status" action="/error.html" method="post">
+<h2>GSM Status</h2>
+<table>
+<tr>
+<td class="parname">Registration in GSM Network</td>
+<td class="parinput" id="creg"><span style="color:#888888">-</span></td>
+</tr>
+<tr>
+<td class="parname">GSM Signal Strength</td>
+<td class="parinput" id="sig_level"><span style="color:#888888">-</span></td>
+</tr>
+</table>
+<div class="send_button_container">
+<input type="button" id="stat_button" value="Request status" onclick="get_stat()"/>
+</div>
+</form>
+
+<form name="frm_status" action="/error.html" method="post">
+<h2>GSM Account</h2>
+<table>    
+<tr>
+<td class="parname">Reply to the USSD Command of status request</td>
+<td class="parinput" id="ussd_responce"><span style="color:#888888">-</span></td>
+</tr>
+</table>
+<div class="send_button_container">
+<input type="button" id="ussd_button" value="Send USSD Request" onclick="get_ussd()"/>
+</div>
+</form>
+
+<form name="frm_pinger" action="/error.html" method="post">
+<h2>Pinger</h2>
+<table>
+<script>
+l='';
+l+=hn_input('Address to poll with ping','pinger_ip','pinger_hostname');
+l+=input('Period, s (30-9999)','pinger_period');
+document.write(l);
+</script>
+</table>
+<div class="send_button_container">
+<input type="button" value="Apply changes" onclick="chkfrm()">
+</div>
+</form>
+
+<form name="frm_event" action="/error.html" method="post">
+<h2>SMS Notifications</h2>
+<table>
+<script>
+l='';
+for(v in smsevents) with(smsevents[v])
+{
+ l+='<tr><td class="parname">'+lbl+'</td>';
+ l+='<td class="parinput"><input type="checkbox" name="events" id="events'+mask+'" '
+      +(data[0].event_mask&mask?'checked=""':'')+'/>'; 
+ l+='</tr>';
+}
+document.write(l);
+getid('events2').disabled=true; // ether link; instable
+</script>
+</table>
+<div class="send_button_container">
+<input type="button" value="Apply changes" onclick="chkfrm()">
+</div>
+</form>
+
+<form name="frm_periodic" action="/error.html" method="post">
+<h2>Periodic Summary Report (Sensors and IO)</h2>
+<table>
+<script>
+l='';
+l+=input('Time to send Summary Report (24h format hh:mm, up to 5 time points, divided by space)','periodic_time');
+document.write(l);
+</script>
+</table>
+<div class="send_button_container">
+<input type="button" value="Apply changes" onclick="chkfrm()"/>
+</div>
+</form>
+
+<form name="frm_restart" action="/gsm_restart.cgi" method="post">
+<h2>GSM modem troubleshooting</h2>
+<input type="hidden" name="data" />
+<table>
+<tr>
+<td class="parname">Last error of GSM modem (hit F5 to refresh)</td>
+<td class="parinput" id="last_gsm_error"><span style="color:#888888">-</span></td>
+</tr>
+</table>
+<div class="send_button_container">
+<input type="submit" value="Restart GSM"/>
+</div>
+</form>
+
+<form name="sender" style="display:none" method="post" action="/sms_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+<script>
+getid('gsm_log').checked=((data[0].flags&0x8000)!=0); // SMS_DEBUG_LOG
+if(data[0].last_gsm_error) getid('last_gsm_error').innerHTML=data[0].last_gsm_error;
+</script>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

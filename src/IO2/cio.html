@@ -1,0 +1,319 @@
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script language="JavaScript" src="devname.cgi"></script>
+<script language="JavaScript" src="menu.js"></script>
+<style>
+select {width:100%;text-align:right}
+.txtinp {width:100%;min-width:110px;text-align:right}
+</style>
+</head>
+<body>
+<script language="javascript">
+/*
+///DEBUG
+var devname="Test NetPing";
+
+packfmt={
+name:{offs:0,len:32},
+direction:{offs:34,len:1},
+delay:{offs:32,len:2},
+level_out:{offs:35,len:1},
+on_event:{offs:36,len:1},
+__len:38};
+
+data=[
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3},
+{name:"",direction:0,delay:0,level_out:0,on_event:0,level_in:0,pulse_dur:3}
+];
+///
+*/
+menu('Линии ввода-вывода');
+
+var labels = {
+name:"Памятка (до 30 символов)",
+direction:"Режим работы IO линии",
+level_out:{
+ 1:'&nbsp;&nbsp;лог.1',
+ 0:'&nbsp;&nbsp;лог.0'},
+level_in:"Текущий уровень",
+log_it:"&nbsp;&nbsp;запись в журнал",
+trap_up:"&nbsp;&nbsp;SNMP Trap при 0 &raquo; 1",
+trap_down:"&nbsp;&nbsp;SNMP Trap при 1 &raquo; 0",
+delay:"Фильтр коротких помех (20-10&nbsp;000мс)",
+pulse_dur:"&nbsp;&nbsp;длит. импульса (100-25&nbsp;500мс, шаг 100мс)",
+pulse:"&nbsp;&nbsp;выдать импульс"
+};
+
+var ch_base = location.search=="?ch=9" ? 8 : 0 ;
+
+var req = new XMLHttpRequest();
+
+req.open('GET','/c'+(ch_base+1)+'io_get.cgi',false);
+req.send(null);
+eval(req.responseText);
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e) //v3
+{
+ fld.style.backgroundColor=e?"#ffaaaa":""; // v3 retain default BG
+ if(e) throw fld;
+}
+
+function chkrange(fn,a,b)
+{
+ var f=frm[fn];
+ v=parseInt(f.value);
+ seterr(f, v!=f.value||isNaN(v)||v<a||v>b);
+ return v;
+}
+
+function chkfrm()
+{
+ var n,m,f;
+ var d='';
+ for(ch in data)
+ {
+  f={};
+  f.name=frm['name'+ch].value;
+  f.direction = data[ch].disabled ? data[ch].direction : parseInt(getid('direction'+ch).value);
+  f.level_out=getid('level_out1'+ch).checked;  
+  f.delay=chkrange('delay'+ch,20,10000);
+  f.pulse_dur=Math.round(chkrange('pulse_dur'+ch,100,25500)/100); // in two places!
+  f.on_event=0;
+  f.on_event|=frm['trap_up'+ch].checked<<0;
+  f.on_event|=frm['trap_down'+ch].checked<<1;
+  f.on_event|=frm['log_it'+ch].checked<<2;
+  d+=pack(packfmt,f);
+ }
+ sender.data.value=d;
+ sender.action='c'+(ch_base+1)+'io_set.cgi'; 
+ sender.submit();
+}
+
+function sendpulse(ch)
+{
+ req.abort();
+ req.open("POST","/io_set_pulse.cgi",true);
+ var dur=Math.round(chkrange('pulse_dur'+ch,100,25500)/100);
+ req.send("data="+hexb(ch_base+parseInt(ch))+hexb(dur));
+}
+
+function setform()
+{
+ for(n in data) with(data[n]) 
+ {
+  frm['direction'+n].value = disabled?disabled:direction;
+  frm['direction'+n].disabled = disabled;
+  frm['delay'+n].value = delay;
+  frm['pulse_dur'+n].value = pulse_dur*100;
+  frm['trap_up'+n].checked = on_event&1;
+  frm['trap_down'+n].checked = on_event&2;
+  frm['log_it'+n].checked = on_event&4;
+ }
+}
+
+</script>
+
+<form name="frm" style="width:80%;padding-left:20px" method="post" action="error.html">
+<table cellspacing="0" style="width:100%;margin:0px">
+<script language="JavaScript">
+var i,l,n;
+
+function lbl(nm,nm2) { 
+ var s=labels[nm];  if(nm2!=undefined) s=s[nm2]; return '<tr><td class="parname">'+s+'</td>';
+}
+
+function trf(nm,aux) {
+var l=lbl(nm);
+if(!aux) aux='';
+for(n in data) l+=
+'<td class="parinput"><input class="txtinp" '+aux+' name="'+nm+n+'" value="'+data[n][nm]+'"/></td>';
+return l+'</tr>';
+}
+
+function shw(nm,st){
+var n,l='';
+if(!st) st='';
+for(n in data)
+ l+='<td class="parinput" '+st+'>'+data[n][nm]+'</td>';
+return lbl(nm)+l+'</tr>';
+}
+
+function chk(nm){
+var l='', n;
+for(n in data)
+ l+='<td class="parinput"><input type="checkbox" id="'+nm+n+'" name="'+nm+n+'"/></td>';
+return lbl(nm)+l+'</tr>';
+}
+
+function rdo(nm,val,aux)
+{
+var rn, rl='';
+if(!aux) aux='';
+for(rn in data)
+ rl+='<td class="parinput"><input type="radio" id="'+nm+val+rn+'" name="_'+nm+rn+'" value="'+val+'" '+
+  (data[rn][nm]==val?' checked="" ':' ')+aux+' /></td>';
+return lbl(nm,val)+rl+'</tr>';
+}
+
+function sel(nm,aux){
+ var l='', n,sn;
+ if(!aux) aux='';
+ for(n in data) {
+  l+='<td class="parinput"><select id="'+nm+n+'" name="'+nm+n+'" '+aux+'>';
+  for(sn=1;sn<labels[nm].length;++sn) l+='<option>'+labels[nm][sn]+'</option>';
+  l+='</select></td>';
+ }
+ return lbl(nm,0)+l+'</tr>';
+}
+
+function direction_changed() 
+{
+ var n,dis,dir;
+ for(n in data) 
+ {
+  dis=data[n].disabled;
+  dir=getid('direction'+n).value;
+  getid('level_out0'+n).disabled=(dis||dir!=1);
+  getid('level_out1'+n).disabled=(dis||dir!=1); 
+  getid('level_in'+n).innerHTML=(dis||dir!=0?'-':data[n].level_in);
+  getid('log_it'+n).disabled=(dis||dir!=0);
+  getid('trap_up'+n).disabled=(dis||dir!=0);
+  getid('trap_down'+n).disabled=(dis||dir!=0);
+  getid('pulse'+n).disabled=(dis||dir!=1);
+ }
+}
+
+var n_ch=data.length; 
+l='';
+
+l+='<tr><th class="parname">Параметр</th>';
+for(n in data) l+='<th class="parinput">Линия '+(ch_base+parseInt(n)+1)+'</th>';
+l+='</tr>';
+
+l+=trf('name','style="text-align:right;color:#009020"');
+
+l+=lbl('direction');
+for(n in data) 
+{
+ l+='<td class="parinput">';
+ if(!data[n].disabled)
+ {
+  l+='<select id="direction'+n+'" onchange="direction_changed()">';
+  l+='<option value="0">вход</option>';
+  l+='<option value="1">выход</option>';
+  if(hwmodel==52)
+   l+='<option value="2">выход логики</option>';
+ }
+ else
+ {
+  l+='<select id="direction'+n+'" disabled="">';
+  l+='<option value="10">ИК интерфейс</option>';
+ }
+ l+='</select></td>';
+}
+l+='</tr>'
+
+l+=trf('delay');
+
+l+=lbl('level_in');
+var vv;
+for(n in data) with(data[n])
+ l+='<td class="parinput" id="level_in'+n+'" style="font-weight:bold">-</td>';
+l+='</tr>';
+
+l+='<tr><td class="parname" colspan="'+(n_ch+1)+'">Реакция на смену лог. уровня</td></tr>';
+l+=chk('log_it');
+l+=chk('trap_up');
+l+=chk('trap_down');
+
+l+='<tr><td class="parname" colspan="'+(n_ch+1)+'">Установка выхода</td></tr>';
+l+=rdo('level_out',1);
+l+=rdo('level_out',0);
+
+
+l+='<tr><td class="parname" colspan="'+(n_ch+1)+'">Однократный импульс</td></tr>';
+l+=trf('pulse_dur');
+
+l+=lbl('pulse');
+for(n in data)
+ l+='<td class=parinput><input type="button" style="width:100%" id="pulse'+n+'" value="импульс" onclick="sendpulse('+n+')"/></td>';
+l+='</tr>';
+
+document.write(l);
+setform();
+direction_changed();
+
+</script>
+</table>
+<div style="text-align:right; padding-top:15px">
+<input type="button" value="Применить изменения" onclick="chkfrm()"/>
+</div>
+</form>
+
+<form name="sender" style="display:none" method="post" action="c1io_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+<div id="footer">&copy; 2012 Alentis Electronics</div>
+</body>
+</html>

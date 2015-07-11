@@ -1,0 +1,197 @@
+//*@{
+/**\defgroup ICMP
+* Модуль ICMP предназначен для реализации протокола ICMP (см RFC 792)
+* Прим: Ограничение- модуль позволяет принимать/создавать ICMP Echo и ICMP Echo Reply пакеты, пакеты других типов не поддерживаются 
+* модуль позволяет:
+* - предварительно разбирать принятый пакет
+* - создавать ICMP пакет на отправку.
+* - отправлять ICMP пакет 
+* - отвечать на пакеты ICMP ECHO
+*\autor 
+*version 1.0
+*\date 17.07.2007
+*
+*
+*/
+#include "platform_setup.h"
+#ifndef ICMP_H
+#define ICMP_H
+//@{
+/**\name Версия модуля
+*
+*/
+#define ICMP_VER     1
+#define ICMP_BUILD   0
+//@}
+
+//------------- Проверка зависимостей
+// Если модуль зависим от других модулей проекта, то необходимо произвести проверку наличия в 
+// проекте этих модулей и совместимости их версий с версией текущего модуля. 
+
+#ifndef	IP_H
+ #error "ICMP MODUL: IP modul not defined!!!"
+#else
+ #if IP_VER < 1
+   #error "ICMP MODUL: IP modul version not supported!!!"
+ #endif
+#endif
+
+//------------- Определение вызовов из зависимых модулей ---------------------
+//Прим. Все вызовы процедур/переменных/структур из зависимых модулей необходимо производить через 
+//объявленные ниже макросы
+
+
+
+//Кол-во процедур инициализации
+#define ICMP_INITS	1
+//Кол-во процедур исполняемых в главном цикле
+#define ICMP_EXECS	0
+//Кол-во процедур исполняемых в таймере
+#define ICMP_TIMERS	0
+//Структура описания модуля
+extern const struct module_rec icmp_struct;
+
+
+//---------------- Раздел, где будут определяться константы модуля -------------------------
+///Значение поля protocol, IP заголовка, для протокола ICMP
+#define ICMP_PROT         0x01
+///Значение поля type, ICMP заголовка, для пакетов Echo
+#define ICMP_ECHO         0x08
+///Значение поля type, ICMP заголовка, для пакетов Echo reply
+#define ICMP_ECHO_REPLY   0x00
+///Значение поля type, ICMP заголовка, для пакетов TTL exceed
+#define ICMP_TTL_EXCEED   0x0B
+
+//---------------- Раздел, где будут определяться структуры модуля -------------------------
+/*!Описание структуры ICMP заголовка 
+\param type Тип ICMP запроса
+\param code 
+\param CRC контрольная сумма ICMP
+\param id  идентификатор пакета (страший байт вперед)
+\param seq порядковый номер пакета (страший байт вперед)
+*/
+struct icmp_header{
+  unsigned char type; 
+  unsigned char code;  
+  unsigned char CRC[2]; 
+  unsigned char id[2];  
+  unsigned char seq[2]; 
+};
+//---------------- Раздел, где будут определяться глобальные переменные модуля -------------
+///Структура для промежуточного хранения заголовка ICMP принятого пакета 
+extern struct icmp_header icmp_rx_head;
+///Структура для промежуточного хранения заголовка ICMP передаваемого пакета
+extern struct icmp_header icmp_tx_head;
+
+///Указатель позиции в теле пакета для функции icmp_get_rx_body
+extern upointer icmp_rx_body_pointer;
+///Указатель позиции в теле пакета для функций icmp_get_tx_body, icmp_get_tx_body.
+extern upointer icmp_tx_body_pointer;
+
+//---------------- Раздел, где будут определяться функции модуля ---------------------------
+/*! Процедура начальной инициализации модуля ICMP
+* Прим: вызов процедуры объявить в структуре описания модуля.
+* Процедура выполняет след. действия:
+*  1. Обнуляет переменные icmp_rx_body_pointer, icmp_tx_body_pointer.
+*/
+extern void icmp_init(void);
+
+/*! Процедура обработки принятых ICMP пакетов
+* Процедура выполняет след. действия:
+* 1. сравнивает поле protocol заголовка IP с константой ICMP_PROT, если поля не равны завершаем работу
+* 2. загружает заголовок ICMP из тела IP пакета
+* 3. анализирует поле type заголовка принятого пакета
+*   3.1. Значение поля type равняется ICMP_ECHO
+*     3.1.1. Формируем пакет ICMP Echo reply ( см описание в RFC 792)              
+*     3.1.2. Отправляем его в сеть 
+*     3.1.3. Завершаем работу.
+*   3.2. Значение поля type равно ICMP_ECHO_REPLY или ICMP_TTL_EXCEED     
+*     3.2.1. Вызывает внешнюю процедуру обработки пакета ICMP_PARSING
+* 4. Завершение работы
+*/
+extern void icmp_exec(void);
+
+/*! Процедура создания ICMP пакета 
+* Процедура выполняет след. действия:
+* 1. Создает IP пакет (_IP_CREATE_PACKET), если пакет не создан (дескриптор равен 0xFF)
+*    завершаем работу возвращаем дескриптор 0xFF
+* 2. Инициализируем поля заголовока IP в пакете следующим образом:
+*    2.1.в поле protocol записываем значение ICMP_PROT
+* 3. Инициализируем поля заголовока ICMP в тела IP пакета следующим образом:
+*     3.1. Все поля заполняем нулями
+* 4. Возвращаем дескриптор созданного пакета
+\return дескриптор пакета
+*/
+extern uword icmp_create_packet(void);
+
+/*! Процедура отправки ICMP пакета 
+* Процедура выполняет след. действия:
+* 1. Вычисляет контрольную сумму ICMP пакета ( внешняя функция ICMP_СALC_CRC )
+* 2. Модифицирует заголовок пакета прописывая туда контрольную сумму  (внешняя функция ICMP_GET_CRC возвращает значение контольной суммы)
+* 3. Отправляет пакет и освобождает занимаемый им буфер (_IP_SEND_PACKET)
+\param packet_id дескриптор пакета
+\param len длинна пакета в байтах
+*/
+extern void icmp_send_packet(uword packet_id,unsigned short len);
+
+/*! Процедура копирует заголовок принятого ICMP пакета в структуру icmp_rx_head
+* Процедура выполняет след. действия:
+* 1. Устанавливает позицию функцией  _IP_SET_RX_BODY_ADDR  в 0
+* 2. Читает заголовок ICMP пакета при помощи IP_GET_RX_BODY в структуру icmp_rx_head
+*/
+extern void icmp_get_rx_header(void);
+
+/*! Процедура копирует заголовок ICMP пакета c дескриптором id в структуру icmp_tx_head
+* Процедура выполняет след. действия:
+* 1. Устанавливает позицию функцией  _IP_SET_TX_BODY_ADDR  в 0
+* 2. Читает заголовок ICMP пакета при помощи IP_GET_TX_BODY в структуру icmp_tx_head
+\param packet_id дескриптор пакета
+*/
+extern void icmp_get_tx_header(uword packet_id);
+
+/*! Процедура копирует структуру icmp_tx_head в заголовок ICMP пакета c дескриптором id
+* Процедура выполняет след. действия:
+* 1. Устанавливает позицию функцией  _IP_SET_TX_BODY_ADDR  в 0
+* 2. Копирует структуру icmp_tx_head в заголовок ICMP пакета при помощи IP_PUT_TX_BODY.
+\param packet_id дескриптор пакета
+*/
+extern void icmp_put_tx_header(uword packet_id);
+
+/*! Процедура копирует данные из тела принятого ICMP пакета в буфер buf длинной len
+* Процедура выполняет след. действия:
+* 1. Устанавливает позицию функцией  _IP_SET_TX_BODY_ADDR  в icmp_rx_body_pointer+sizeof(struct icmp_header)
+* 2. Читает буфер длинной len из ICMP пакета при помощи IP_GET_RX_BODY 
+* 3. Увеличивает icmp_rx_body_pointer на длинну len
+\param buf указатель на буфер
+\param len длинна передаваемых данных в байтах
+*/
+extern void icmp_get_rx_body(unsigned char *buf,uword len);
+
+/*! Процедура копирует данные из тела  ICMP пакета c дескриптором packet_id в буфер buf длинной len
+* Процедура выполняет след. действия:
+* 1. Устанавливает позицию функцией  _IP_SET_TX_BODY_ADDR  в icmp_tx_body_pointer+sizeof(struct icmp_header)
+* 2. Читает буфер длинной len из ICMP пакета при помощи IP_GET_TX_BODY 
+* 3. Увеличивает icmp_tx_body_pointer на длинну len
+\param packet_id дескриптор пакета
+\param buf указатель на буфер
+\param len длинна передаваемых данных в байтах
+*/
+extern void icmp_get_tx_body(uword packet_id,unsigned char *buf,uword len);
+
+/*! Процедура копирует буфер buf длинной len в тело ICMP пакета c дескриптором packet_id
+* Процедура выполняет след. действия:
+* 1. Устанавливает позицию функцией  _IP_SET_TX_BODY_ADDR  в icmp_tx_body_pointer+sizeof(struct icmp_header)
+* 2. Пишет буфер длинной len в ICMP пакет при помощи IP_PUT_TX_BODY 
+* 3. Увеличивает icmp_tx_body_pointer на длинну len
+\param packet_id дескриптор пакета
+\param buf указатель на буфер
+\param len длинна передаваемых данных в байтах
+*/
+extern void icmp_put_tx_body(uword packet_id,unsigned char *buf,uword len);
+
+
+void icmp_echo_reply(void);
+
+
+#endif
+

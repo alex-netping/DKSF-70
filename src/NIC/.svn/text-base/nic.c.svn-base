@@ -1,0 +1,232 @@
+#include "platform_setup.h"
+
+
+#ifdef NIC_MODUL
+
+#ifndef NIC_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+        #undef DEBUG_INPUT_PARAM
+        #undef DEBUG_OUTPUT_PARAM	
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+        #define DEBUG_INPUT_PARAM(msg,val)	
+        #define DEBUG_OUTPUT_PARAM(msg,val)	
+	
+#endif
+
+//Описание переменных модуля
+
+unsigned char nic_mem_allocation[NIC_RAM_SIZE];
+upointer nic_rx_body_pointer;
+upointer nic_tx_body_pointer;
+struct mac_header mac_head_tx={0};
+struct mac_header mac_head_rx={0};
+
+//Описание констант модуля
+const struct exec_queue_rec nic_init_table[]={{(upointer)nic_init,NIC_INIT1_PRI|LAST_REC}};
+const struct exec_queue_rec nic_exec_table[]={{(upointer)nic_exec,NIC_EXEC1_PRI|LAST_REC}};
+const struct module_rec nic_struct={(upointer)nic_init_table, (upointer)nic_exec_table, NULL};
+
+//Описание процедур модуля
+
+void nic_init(void)                              //Процедура инициализации
+{
+  uword cnt;
+  DEBUG_PROC_START("nic_init");
+  nic_rx_body_pointer=0;
+  nic_tx_body_pointer=0;
+  nic_mem_allocation[0] = NIC_RAM_SIZE&0x7f;
+  for(cnt=1;cnt<NIC_RAM_SIZE;cnt++)nic_mem_allocation[cnt]=0;    
+  DEBUG_PROC_END("nic_init");
+}
+
+void nic_exec(void)                              
+{
+  DEBUG_PROC_START("nic_exec");
+  NIC_GET_PACKET;
+  if(NIC_RX_FLAG)
+  {
+    nic_get_rx_head();
+    nic_rx_body_pointer = 0;
+    NIC_PACKET_PARSING;
+    NIC_PACKET_REMOVE;
+  }
+  DEBUG_PROC_END("nic_exec");
+}
+
+uword nic_create_packet(void)
+{
+  uword data=0, cnt, tmp, fl=0;
+  DEBUG_PROC_START("nic_create_packet");
+  for(cnt=0;cnt<NIC_RAM_SIZE;)
+  {
+    tmp = nic_mem_allocation[cnt]&0x7f;
+    if(nic_mem_allocation[cnt]&0x80)
+    {
+      cnt += tmp;
+      continue;      
+    }
+    else
+    {
+      if(tmp < 6)
+      {
+        cnt += tmp;
+        continue;      
+      }
+      else
+      {
+        if(tmp > 6) nic_mem_allocation[cnt+6] = (tmp - 6)&0x7f;
+        nic_mem_allocation[cnt] = 0x86; 
+        data = cnt;
+        fl = 1;
+        util_fill(mac_head_tx.dest_mac, 6, 0xff);
+        util_cpy(NIC_MAC, mac_head_tx.src_mac, 6); 
+        nic_put_tx_head(cnt);
+        break;
+      }
+    }
+  }
+  if(!fl)
+  {
+    ERROR(NICK_ERROR1);
+    data = 0xff;
+  }
+  DEBUG_OUTPUT_PARAM(":%x", data);
+  DEBUG_PROC_END("nic_create_packet");  
+  return data;
+}
+
+void nic_send_packet(uword packet_id,unsigned short len,uword packet_free)
+{
+  DEBUG_PROC_START("nic_send_packet");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  DEBUG_INPUT_PARAM("packet_free:%u", packet_free);
+  nic_get_tx_head(packet_id);
+  nic_put_tx_head(packet_id);
+  NIC_SEND_PACKET(packet_id+NIC_RAM_START, len); 
+  if(packet_free)nic_free_packet(packet_id);
+  else nic_resize_packet(packet_id, len);
+  DEBUG_PROC_END("nic_send_packet");  
+}
+
+extern void nic_resize_packet(uword packet_id, unsigned short len)
+{
+  uword tmp, str;
+  DEBUG_PROC_START("nic_resize_packet");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  tmp = len>>8;
+  if(len&0xff)tmp++;
+  str = nic_mem_allocation[packet_id]&0x7f;
+  if(str <= tmp)return;
+  nic_mem_allocation[packet_id] = 0x80|tmp;
+  nic_mem_allocation[packet_id+tmp] = (str-tmp)&0x7f;
+  nic_merge_blocks(); 
+  DEBUG_PROC_END("nic_resize_packet");  
+}
+
+void nic_free_packet(uword packet_id)
+{
+  DEBUG_PROC_START("nic_free_packet");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  nic_mem_allocation[packet_id] &= 0x7f;
+  nic_merge_blocks();  
+  DEBUG_PROC_END("nic_free_packet");  
+}
+
+void nic_get_rx_head(void)
+{
+  DEBUG_PROC_START("nic_get_rx_head");
+  NIC_READ_BUF(NIC_RX_ADDR, mac_head_rx.dest_mac, 6);
+  NIC_READ_BUF(NIC_RX_ADDR+6, mac_head_rx.src_mac, 6);
+  NIC_READ_BUF(NIC_RX_ADDR+12, mac_head_rx.prot_type, 2);
+  DEBUG_PROC_END("nic_get_rx_head");  
+}
+
+void nic_get_tx_head(uword packet_id)
+{
+  DEBUG_PROC_START("nic_get_tx_head");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  NIC_READ_BUF((packet_id+NIC_RAM_START)<<8, mac_head_tx.dest_mac, 6);
+  NIC_READ_BUF(((packet_id+NIC_RAM_START)<<8)+6, mac_head_tx.src_mac, 6);
+  NIC_READ_BUF(((packet_id+NIC_RAM_START)<<8)+12, mac_head_tx.prot_type, 2);
+  DEBUG_PROC_END("nic_get_tx_head");  
+}
+
+void nic_put_tx_head(uword packet_id)
+{
+  DEBUG_PROC_START("nic_put_tx_head");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  NIC_WRITE_BUF((packet_id+NIC_RAM_START)<<8, mac_head_tx.dest_mac, 6);
+  NIC_WRITE_BUF(((packet_id+NIC_RAM_START)<<8)+6, mac_head_tx.src_mac, 6);
+  NIC_WRITE_BUF(((packet_id+NIC_RAM_START)<<8)+12, mac_head_tx.prot_type, 2);
+  DEBUG_PROC_END("nic_put_tx_head");  
+}
+
+void nic_get_rx_body(unsigned char* buf, uword len)
+{
+  DEBUG_PROC_START("nic_get_rx_body");
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  NIC_READ_BUF(NIC_RX_ADDR+nic_rx_body_pointer+14, buf, len);
+  nic_rx_body_pointer+=len;
+  DEBUG_PROC_END("nic_get_rx_body");  
+}
+
+void nic_get_tx_body(uword packet_id, unsigned char* buf, uword len)
+{
+  DEBUG_PROC_START("nic_get_tx_body");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  NIC_READ_BUF(((NIC_RAM_START+packet_id)<<8)+nic_tx_body_pointer+14, buf, len);
+  nic_tx_body_pointer+=len;
+  DEBUG_PROC_END("nic_get_tx_body");  
+}
+
+
+void nic_put_tx_body(uword packet_id,unsigned char* buf, uword len)
+{
+  DEBUG_PROC_START("nic_put_tx_body");
+  DEBUG_INPUT_PARAM("packet_id:%u", packet_id);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  NIC_WRITE_BUF(((NIC_RAM_START+packet_id)<<8)+nic_tx_body_pointer+14, buf, len);
+  nic_tx_body_pointer+=len;
+  DEBUG_PROC_END("nic_put_tx_body");  
+}
+
+void nic_merge_blocks(void)
+{
+  uword cnt,tmp_cb=0,tmp_sz=0;
+  DEBUG_PROC_START("nic_merge_blocks");
+  for(cnt=0;cnt<NIC_RAM_SIZE;)
+  {
+    if(nic_mem_allocation[cnt+tmp_sz]&0x80)
+    {
+      cnt += (nic_mem_allocation[cnt+tmp_sz]&0x7f)+tmp_sz;
+      tmp_sz = 0;
+      tmp_cb = 0;
+      continue;
+    }
+    else
+    {
+      tmp_cb++;
+      tmp_sz+=nic_mem_allocation[cnt+tmp_sz]&0x7f;
+    }
+    if(tmp_cb > 1) nic_mem_allocation[cnt] = tmp_sz;
+    if((cnt+tmp_sz) >= NIC_RAM_SIZE)break;
+  }
+  DEBUG_PROC_END("nic_merge_blocks");  
+}
+
+#endif
+

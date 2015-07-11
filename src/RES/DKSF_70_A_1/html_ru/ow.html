@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="ow_get_addr_data.cgi"></script>
+</head>
+<body>
+<script>
+
+menu('Подключение датчиков 1-Wire');
+
+function getid(a) { return document.getElementById(a); }
+
+</script>
+
+<div id="middle">
+<div id="push_margin" style="height:50px;"></div>
+<div style="text-align:center;">
+<h2>Определение уникального номера нового датчика</h2>
+<script>
+if(typeof data == 'undefined')
+ document.write('<div class="alert" style="width:150px;margin:0px auto;">ошибка CGI</div>');
+else if(data.addr=='0000 0000 0000 0000')
+ document.write('К шине 1-Wire ничего не подключено; либо подключено более одного датчика.<br/>Определение уникального номера датчика невозможно.');
+else
+ document.write('Уникальный номер 1-Wire датчика:<br/><p style="color:green;">'+data.addr+'</p>');
+</script>
+<div class="note" style="width:450px;margin:30px auto;">
+Нажмите F5 для обновления информации
+<br/>
+<br/>
+Для определения уникального номера датчика отсоедините все <span style="white-space: nowrap;">1-Wire</span> датчики, кроме определяемого.
+Для подключения датчика скопируйте (copy-paste) его уникальный номер с этой страницы в соответствующее поле на страницах Температура, Влажность.
+</div><!--note-->
+</div><!--center-->
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

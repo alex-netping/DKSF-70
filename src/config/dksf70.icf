@@ -1,0 +1,48 @@
+/*###ICF### Section handled by ICF editor, don't touch! ****/
+/*-Editor annotation file-*/
+/* IcfEditorFile="$TOOLKIT_DIR$\config\ide\IcfEditor\cortex_v1_0.xml" */
+/*-Specials-*/
+define symbol __ICFEDIT_intvec_start__ = 0x00001000;
+/*-Memory Regions-*/
+define symbol __ICFEDIT_region_ROM_start__ = 0x00001100;
+define symbol __ICFEDIT_region_ROM_end__   = 0x0003FFFF; // end at 256kb, top 256 is update area
+define symbol __ICFEDIT_region_RAM_start__ = 0x10000000;
+/* LBS ram top - 192, 32 + 128 used by chip bootROM, 32 by IAP */
+define symbol __ICFEDIT_region_RAM_end__   = 0x10007F3F;
+/*-Sizes-*/
+define symbol __ICFEDIT_size_cstack__ = 0x1000;
+define symbol __ICFEDIT_size_heap__   = 0x100;
+/**** End of ICF editor section. ###ICF###*/
+
+define memory mem with size = 4G;
+define region ROM_region   = mem:[from __ICFEDIT_region_ROM_start__   to __ICFEDIT_region_ROM_end__];
+define region RAM_region   = mem:[from __ICFEDIT_region_RAM_start__   to __ICFEDIT_region_RAM_end__];
+// LBS 2.02.2014
+define region ETHER_MEM_region = mem:[from 0x20000000 to 0x20007fff]; // LPC1778, 2x16kb periph.sram // Linker don't checks this section overflow !!!! Check manually in code !!!
+
+define symbol _AHB_RAM_start__  = 0x2007C000;
+define symbol _AHB_RAM_end__    = 0x20083FFF;
+define region AHB_RAM_region = mem:[from _AHB_RAM_start__ to _AHB_RAM_end__];
+
+define block CSTACK    with alignment = 8, size = __ICFEDIT_size_cstack__   { };
+define block HEAP      with alignment = 8, size = __ICFEDIT_size_heap__     { };
+
+initialize by copy { readwrite };
+do not initialize  { section .noinit };
+do not initialize  { section USB_DMA_RAM };
+
+place at address mem:__ICFEDIT_intvec_start__ { readonly section .intvec };
+place in ROM_region   { readonly };
+place in RAM_region   { readwrite,
+                        block CSTACK, block HEAP };
+place in AHB_RAM_region
+                      { readwrite data section AHB_RAM_MEMORY, section USB_DMA_RAM,  section EMAC_DMA_RAM };
+					  /* LBS */
+place in ETHER_MEM_region { section ETHER_MEM };
+do not initialize  { section ETHER_MEM };
+
+place at address mem: 0x40000 { readonly section MT };
+place in ROM_region   { readonly section HTML_HEADERS };
+
+
+

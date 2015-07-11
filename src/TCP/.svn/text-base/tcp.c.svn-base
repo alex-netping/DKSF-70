@@ -1,0 +1,540 @@
+#include "platform_setup.h"
+#ifdef TCP_MODUL
+
+#ifndef TCP_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+	#undef DEBUG_INPUT_PARAM
+    #undef DEBUG_OUTPUT_PARAM
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+	#define DEBUG_INPUT_PARAM(msg,val)	
+        #define DEBUG_OUTPUT_PARAM(msg,val)	
+#endif
+
+//---------------- Раздел, где будут определяться глобальные переменные модуля -------------
+///Глобальная переменная возвращающая номер активной tcp сесии для внешнего обработчика
+uword tcp_active_session;
+///Таблица сокетов
+struct tcp_socket_struct tcp_socket[TCP_MAX_SOCKETS];
+///Структуры для хранения заголовков TCP
+struct tcp_header tcp_head_rx,tcp_head_tx;
+upointer tcp_tx_body_pointer,tcp_rx_body_pointer;
+
+void tcp_send_flags(uword flags,uword socket);
+void move_to_listen(uword socket);
+
+//Описание процедур модуля
+const struct exec_queue_rec tcp_init_table[]={{(upointer)tcp_init,TCP_INIT1_PRI|LAST_REC}};
+const struct exec_queue_rec tcp_exec_table[]={{(upointer)tcp_exec,TCP_EXEC1_PRI|LAST_REC}};
+const struct exec_queue_rec tcp_timer_table[]={{(upointer)tcp_timer,TIMER2|LAST_REC}};
+
+const struct module_rec tcp_struct={(upointer)tcp_init_table, 
+                                    (upointer)tcp_exec_table, 
+                                    (upointer)tcp_timer_table};
+
+void long_to_mas(unsigned long in,unsigned char *out);
+unsigned long mas_to_long(unsigned char *in);
+unsigned long reverse_bytes(unsigned long data);
+
+void tcp_init(void)
+{
+  uword i = 0;
+  DEBUG_PROC_START("tcp_init");
+  while (i != TCP_MAX_SOCKETS)
+    tcp_socket[i++].used = 0; 
+  DEBUG_PROC_END("tcp_init");
+}
+
+uword tcp_create_packet(uword tcp_socket_num)
+{ 
+  uword data = 0;
+  struct tcp_socket_struct* cur_socket;
+  DEBUG_PROC_START("tcp_create_packet");
+  cur_socket = &tcp_socket[tcp_socket_num];
+//Заголовок IP уровня
+  data = ip_create_packet();
+  ip_head_tx.protocol = TCP_PROT;
+  util_cpy(cur_socket->socket_ip,ip_head_tx.dest_ip, 4);
+  util_cpy(TCP_MY_IP,ip_head_tx.src_ip, 4);
+  ip_put_tx_header(data);
+  
+//Заголовок TCP уровня
+  util_cpy(cur_socket->socket_port,tcp_head_tx.port_dest, 2);
+  util_cpy(cur_socket->listen_port,tcp_head_tx.port_src, 2);
+  long_to_mas(cur_socket->seq,tcp_head_tx.sequence_num); 
+  long_to_mas(cur_socket->ack,tcp_head_tx.ack_num);
+  
+  tcp_head_tx.data_offs = (sizeof(struct tcp_header)/4)<<4;
+  tcp_head_tx.window[0] = (TCP_WINDOW>>8)&0xff;
+  tcp_head_tx.window[1] = TCP_WINDOW&0xff;
+  tcp_head_tx.flags = TCP_MSK_ACK | TCP_MSK_PSH;
+  tcp_head_tx.option[0]=0x02; ///!!! Добавлено для устранения фрагментации на TCP
+  tcp_head_tx.option[1]=0x04;
+  tcp_head_tx.option[2]=0x05;
+  tcp_head_tx.option[3]=0xB4;
+  tcp_put_tx_head(data);
+  
+  DEBUG_OUTPUT_PARAM(" :%u", data);
+  DEBUG_PROC_END("tcp_create_packet");
+  return data;
+}
+
+void tcp_send_packet(uword tcp_socket_num,uword packet_id,unsigned short len)
+{   
+    unsigned short temp = 0;
+    struct tcp_socket_struct* cur_socket;
+    unsigned char header[12];
+    DEBUG_PROC_START("tcp_send_packet");
+    cur_socket = &tcp_socket[tcp_socket_num];
+    CRC16=0;
+    tcp_get_tx_head(packet_id);
+    ip_get_tx_header(packet_id);
+    
+    tcp_head_tx.CRC[0] = 0; 
+    tcp_head_tx.CRC[1] = 0;
+    
+    util_cpy(_IP_HEAD_TX.src_ip, header,4);
+    util_cpy(_IP_HEAD_TX.dest_ip, &header[4],4);
+    header[8]=0;
+    header[9]=TCP_PROT;
+
+    header[11]=(sizeof(struct tcp_header)+len)&0xff;
+    header[10]=(sizeof(struct tcp_header)+len) >> 8;
+    
+    
+    TCP_CALC_CRC(header,12);
+    TCP_CALC_CRC(((unsigned char*)&tcp_head_tx), sizeof(struct tcp_header));
+    
+    if (len)
+    {  
+       temp = (NIC_RAM_START+packet_id)<<8;
+       temp +=sizeof(struct mac_header);
+       //temp += (ip_head_rx.fragment_offset[0]<<7)&0x1F;
+       //temp += ip_head_rx.fragment_offset[1];
+       temp += sizeof(struct ip_header);
+       temp += sizeof(struct tcp_header);
+       TCP_CALC_CRC_NIC(temp,len);
+    }
+    
+    temp = TCP_GET_CRC;
+    
+    tcp_head_tx.CRC[0] = (temp & 0xff);
+    tcp_head_tx.CRC[1] = (temp >> 8);
+    
+    tcp_put_tx_head(packet_id);
+    
+    ip_send_packet(packet_id,(len+sizeof(struct tcp_header)),0);
+    cur_socket->resend_packet= packet_id;
+    cur_socket->resend_retry = TCP_MAX_RETRY;
+    cur_socket->tcp_state = TCP_WAIT_ACK;
+    cur_socket->tcp_timeout= TCP_TIMEOUT;
+    cur_socket->tcp_tx_len=len;
+    cur_socket->seq += len;
+    
+    DEBUG_PROC_END("tcp_send_packet");
+
+}
+
+void tcp_resend_packet(uword tcp_socket_num)
+{   unsigned short temp=0;
+	struct tcp_socket_struct* cur_socket;
+    DEBUG_PROC_START("tcp_resend_packet");
+    cur_socket = &tcp_socket[tcp_socket_num];
+    temp =  sizeof(struct ip_header);
+    temp +=(cur_socket->tcp_tx_len+sizeof(struct tcp_header));
+//    temp += (ip_head_rx.fragment_offset[0]<<7)&0x1F;
+//    temp += ip_head_rx.fragment_offset[1];
+//    temp += ((tcp_head_rx.data_offs>>4)&0xf)*4;
+//    temp += sizeof(struct ip_header);
+    nic_send_packet(cur_socket->resend_packet,temp,0);
+    cur_socket->tcp_state = TCP_WAIT_ACK;
+    DEBUG_PROC_END("tcp_resend_packet");
+}
+
+void tcp_remove_packet(uword packet_id)
+{   
+    DEBUG_PROC_START("tcp_remove_packet");
+    nic_free_packet(packet_id);
+    
+    DEBUG_PROC_END("tcp_remove_packet");
+}
+
+void tcp_get_rx_head(void)
+{
+    DEBUG_PROC_START("tcp_get_rx_head");
+    IP_SET_RX_BODY_ADDR(0);
+    IP_GET_RX_BODY((unsigned char*)&tcp_head_rx,sizeof(struct tcp_header));
+    
+    DEBUG_PROC_END("tcp_get_rx_head");
+}
+
+void tcp_get_tx_head(uword packet_id)
+{
+    DEBUG_PROC_START("tcp_get_tx_head");
+    IP_SET_TX_BODY_ADDR(0);
+    IP_GET_TX_BODY(packet_id,(unsigned char*)&tcp_head_tx,sizeof(struct tcp_header));
+    
+    DEBUG_PROC_END("tcp_get_tx_head");
+}
+
+void tcp_put_tx_head(uword packet_id)
+{   
+    DEBUG_PROC_START("tcp_put_tx_head");
+    IP_SET_TX_BODY_ADDR(0);
+    IP_PUT_TX_BODY(packet_id,(unsigned char*)&tcp_head_tx,sizeof(struct tcp_header));
+    
+    DEBUG_PROC_END("tcp_put_tx_head");
+}
+
+void tcp_get_tx_body(uword packet_id,unsigned char *buf,uword len)
+{
+    DEBUG_PROC_START("tcp_get_tx_body");
+    IP_SET_TX_BODY_ADDR(sizeof(struct tcp_header)+tcp_tx_body_pointer);
+    IP_GET_TX_BODY(packet_id,buf,len);
+    tcp_tx_body_pointer+=len;
+    DEBUG_PROC_END("tcp_get_tx_body");
+}
+
+void tcp_get_rx_body(unsigned char *buf,uword len)
+{   
+    unsigned int temp=0;
+    //DEBUG_PROC_START("tcp_get_rx_body");
+    temp = tcp_rx_body_pointer;
+    temp +=((tcp_head_rx.data_offs>>4)&0xf)*4;
+    IP_SET_RX_BODY_ADDR(temp);
+    IP_GET_RX_BODY(buf,len);
+    tcp_rx_body_pointer+=len;
+    //DEBUG_PROC_END("tcp_get_rx_body");
+}
+
+void tcp_put_tx_body(uword packet_id,unsigned char *buf,uword len)
+{   
+    DEBUG_PROC_START("tcp_put_tx_body");
+    IP_SET_TX_BODY_ADDR(sizeof(struct tcp_header)+tcp_tx_body_pointer);
+    IP_PUT_TX_BODY(packet_id,buf,len);
+    tcp_tx_body_pointer+=len;
+    DEBUG_PROC_END("tcp_put_tx_body");
+}
+
+uword tcp_open(unsigned short listen_port)
+{   uword i = 0;
+    struct tcp_socket_struct* cur_socket;
+    
+    DEBUG_PROC_START("tcp_open");
+    while (i != TCP_MAX_SOCKETS)
+    {   cur_socket = &tcp_socket[i];
+        if (!cur_socket->used)      
+        {   
+            cur_socket->used = 1;
+            cur_socket->listen_port[0] = (unsigned char)((listen_port>>8)&0xff);
+            cur_socket->listen_port[1] = (unsigned char)((listen_port>>0)&0xff);
+            cur_socket->tcp_state = TCP_LISTEN;
+            DEBUG_OUTPUT_PARAM("\n\r :%u", i);
+            DEBUG_PROC_END("tcp_open");
+            return i; 
+        }
+        i++;
+    }
+    DEBUG_OUTPUT_PARAM(" :%u", 0xff);
+    DEBUG_PROC_END("tcp_open");
+    return 0xff;    
+    
+}
+
+void tcp_handler(void)
+{   unsigned int i = 0;
+    struct tcp_socket_struct* cur_socket;
+    if (!(_IP_HEAD_RX.protocol == TCP_PROT))
+       return;
+    DEBUG_PROC_START("tcp_handler");
+	
+	DEBUG_OUTPUT_PARAM(" :%u", tcp_socket[0].tcp_state);
+	//DEBUG_OUTPUT_PARAM(" :%u", tcp_socket[0].tcp_state);
+	
+    tcp_get_rx_head();
+    tcp_active_session=TCP_MAX_SOCKETS;
+    while (i != TCP_MAX_SOCKETS)
+    {   cur_socket = &tcp_socket[i];
+        if (cur_socket->used&&(!util_cmp(cur_socket->listen_port,tcp_head_rx.port_dest,2)))
+        {   
+            if ((cur_socket->tcp_state != TCP_LISTEN))
+            {
+                if (!util_cmp(cur_socket->socket_port,tcp_head_rx.port_src,2)
+                 &&(!util_cmp(cur_socket->socket_ip,_IP_HEAD_RX.src_ip,4))
+                   )
+                {    
+                    tcp_active_session = i;
+                    break;               
+                }
+            }
+            else
+            {
+               if (tcp_active_session==TCP_MAX_SOCKETS) 
+               {
+                 tcp_active_session = i;
+                 util_cpy(tcp_head_rx.port_src,cur_socket->socket_port, 2);
+                 util_cpy(_IP_HEAD_RX.src_ip,cur_socket->socket_ip, 4);          
+                 cur_socket->ack = mas_to_long(tcp_head_rx.sequence_num);
+               }
+            }   
+        }
+        i++;
+    } 
+    if (tcp_active_session==TCP_MAX_SOCKETS){
+        //Ни чего не нашли - выходим.
+        DEBUG_PROC_END("tcp_handler");
+        return;
+      }
+    
+    
+    cur_socket = &tcp_socket[tcp_active_session];
+    //Анализируем состояние сессии
+	//Если имеется флаг reset, сбрасываем состояние.
+	if (tcp_head_rx.flags&TCP_MSK_RST)
+	{
+		move_to_listen(tcp_active_session);
+        DEBUG_PROC_END("tcp_handler");
+        return;
+	};
+    switch (cur_socket->tcp_state){
+    case TCP_LISTEN:  if (!(tcp_head_rx.flags&TCP_MSK_SYN))
+                      {   
+                          DEBUG_PROC_END("tcp_handler");
+                          return;
+                      }
+                      cur_socket->seq += 0xffff + 3*tcp_active_session; //Генерация начального номера 
+                                                                          //очереди
+                      cur_socket->ack +=1;          
+                      tcp_send_flags(TCP_MSK_ACK | TCP_MSK_SYN,tcp_active_session);
+                      cur_socket->tcp_state =TCP_SYN_RCVD;
+                      DEBUG_PROC_END("tcp_handler");        
+                      return;
+                      
+     case TCP_SYN_RCVD: if (tcp_head_rx.flags&TCP_MSK_ACK)
+                       {
+                          cur_socket->tcp_state=TCP_ESTABLISHED;
+                          cur_socket->seq +=1;
+                          #ifdef TCP_OPEN_HANDLER 
+                            TCP_OPEN_HANDLER();
+                          #endif
+                          DEBUG_PROC_END("tcp_handler");
+                          return;
+                       }
+/*
+                       else  if (tcp_head_rx.flags&TCP_MSK_RST)
+                       {
+                          move_to_listen(tcp_active_session);
+                          DEBUG_PROC_END("tcp_handler");
+                          return;
+                       }
+*/
+                       DEBUG_PROC_END("tcp_handler");
+                       return;
+     case (TCP_ESTABLISHED): goto est_jump;
+     case (TCP_WAIT_ACK):
+     est_jump: 
+          if (tcp_head_rx.flags&TCP_MSK_ACK)
+          {   
+              cur_socket->last_ack = mas_to_long(tcp_head_rx.sequence_num);
+              
+              if (  cur_socket->resend_packet!=0xFF 
+                 && cur_socket->ack <=tcp_socket[tcp_active_session].last_ack)
+              {  
+                 tcp_remove_packet(cur_socket->resend_packet);
+                 cur_socket->resend_packet=0xFF;
+                 cur_socket->tcp_state=TCP_ESTABLISHED;
+              }
+          }
+          i = (ip_head_rx.total_lenght[0]<<8);
+          i |=  ip_head_rx.total_lenght[1];
+          i -= (ip_head_rx.fragment_offset[0]<<7)&0x1F;
+          i -= ip_head_rx.fragment_offset[1];
+          i -= ((tcp_head_rx.data_offs>>4)&0xf)*4;
+          i -= sizeof(struct ip_header);
+          
+          cur_socket->ack += i;
+          
+          if (tcp_head_rx.flags&TCP_MSK_FIN)
+          {
+              cur_socket->ack++;
+              tcp_send_flags(TCP_MSK_ACK | TCP_MSK_FIN,tcp_active_session);
+              cur_socket->tcp_state=TCP_LAST_ACK;
+              
+              DEBUG_PROC_END("tcp_handler");
+              return;
+          }
+          if (i)
+          {
+              cur_socket->tcp_rcv_len=i;
+              tcp_send_flags(TCP_MSK_ACK,tcp_active_session);
+              cur_socket->tcp_state=TCP_ESTABLISHED;
+              TCP_HANDLER_DATA();
+              DEBUG_PROC_END("tcp_handler");
+              return;
+          }
+          break;
+
+    case TCP_FIN_WAIT_1: if ((!(tcp_head_rx.flags&TCP_MSK_FIN))&&(tcp_head_rx.flags&TCP_MSK_ACK))
+                          {     
+                              cur_socket->tcp_state=TCP_FIN_WAIT_2;
+                              cur_socket->tcp_timeout=TCP_TIMEOUT;
+                              DEBUG_PROC_END("tcp_handler");
+                              return;
+                          }
+                          else if (tcp_head_rx.flags&TCP_MSK_FIN)
+                          {   
+                              tcp_send_flags(TCP_MSK_ACK,tcp_active_session);
+                              move_to_listen(tcp_active_session);
+                              #ifdef TCP_HANDLER_CLOSE
+                              TCP_HANDLER_CLOSE();
+                              #endif
+                              DEBUG_PROC_END("tcp_handler");
+                              return;    
+                          }
+                          break;
+    case TCP_FIN_WAIT_2: if (tcp_head_rx.flags&TCP_MSK_FIN)
+                         {
+                              cur_socket->ack +=1;
+                              cur_socket->seq +=1;
+                              tcp_send_flags(TCP_MSK_ACK,tcp_active_session); //Отвечаем ACK 
+                              move_to_listen(tcp_active_session);
+                          }
+                         break;                    
+    case TCP_LAST_ACK:   if (tcp_head_rx.flags&TCP_MSK_ACK)
+                         {
+                                  move_to_listen(tcp_active_session);
+                                  #ifdef TCP_HANDLER_CLOSE
+                                  TCP_HANDLER_CLOSE();
+                                  #endif
+                                  DEBUG_PROC_END("tcp_handler");
+                                  return;      
+                         }   
+    }
+    DEBUG_PROC_END("tcp_handler");
+    return;       
+}
+
+void tcp_close_session(uword session_num)
+{ 
+  struct tcp_socket_struct* cur_socket;
+  DEBUG_PROC_START("tcp_close_session");
+  cur_socket = &tcp_socket[session_num];
+  if (cur_socket->resend_packet!=0xff)
+  	tcp_remove_packet(cur_socket->resend_packet);
+  tcp_send_flags(TCP_MSK_ACK | TCP_MSK_FIN,session_num);
+  cur_socket->tcp_state = TCP_FIN_WAIT_1;
+  cur_socket->tcp_timeout=TCP_TIMEOUT;
+  DEBUG_PROC_END("tcp_close_session");
+}
+
+void tcp_exec(void)
+{ 
+  uword count;
+  struct tcp_socket_struct* cur_socket;
+  //DEBUG_PROC_START("tcp_exec");
+  count=0;
+  while (count != TCP_MAX_SOCKETS)
+  {   cur_socket =&tcp_socket[count];
+      if (!cur_socket->used || cur_socket->tcp_timeout)
+      { 
+        count++;   
+        continue;
+      }
+      switch (cur_socket->tcp_state){
+      case TCP_WAIT_ACK:
+           if (cur_socket->resend_retry)
+          {     
+              tcp_resend_packet(count);
+              cur_socket->resend_retry--;
+              cur_socket->tcp_timeout = TCP_TIMEOUT;
+          }
+          else
+          {  
+              move_to_listen(count);
+          }
+          break;
+      case TCP_FIN_WAIT_1:move_to_listen(count);break;
+      case TCP_FIN_WAIT_2:move_to_listen(count);break;
+      case TCP_LAST_ACK:  move_to_listen(count);break;
+      case TCP_SYN_RCVD:  move_to_listen(count);break;
+      }
+      count++;  
+  }
+  //DEBUG_PROC_END("tcp_exec");
+}
+
+void move_to_listen(uword socket)
+{  
+   if (socket == 0)
+      TCP_GET_CRC;
+   if (tcp_socket[socket].resend_packet != 0xff)
+      tcp_remove_packet(tcp_socket[socket].resend_packet);
+   tcp_socket[socket].tcp_state = TCP_LISTEN;
+}
+void tcp_timer(void)
+{
+    static uword i =0;
+    while (i != TCP_MAX_SOCKETS)
+    {
+        if (tcp_socket[i].tcp_timeout)
+          tcp_socket[i].tcp_timeout--; i++;
+    }
+}
+
+void tcp_send_flags(uword flags,uword socket)
+{   
+    uword temp = 0; 
+    DEBUG_PROC_START("tcp_send_flags");
+    temp = tcp_create_packet(socket);  
+    tcp_head_tx.flags = 0;
+    tcp_head_tx.flags |= flags;
+    tcp_put_tx_head(temp);
+    tcp_send_packet(socket,temp,0);
+    tcp_remove_packet(temp);
+    
+    DEBUG_PROC_END("tcp_send_flags");
+}
+
+
+unsigned long mas_to_long(unsigned char *in)
+{  
+  union trans_un{
+      unsigned char byte[4];
+      unsigned long all;
+  } transform;
+  util_cpy(in,transform.byte,4);  
+  return reverse_bytes(transform.all);
+}
+void long_to_mas(unsigned long in,unsigned char *out)
+{ 
+  union trans_un{
+      unsigned char byte[4];
+      unsigned long all;
+  } transform;
+  transform.all = reverse_bytes(in);
+  util_cpy(transform.byte,out,4);
+}
+
+unsigned long reverse_bytes(unsigned long data)
+{
+  unsigned long result;
+  uword i;
+  result=0;
+  i=4;
+  do{
+    result=result<<8; 
+    result|=data&0xFF;  
+    data=data>>8;
+  }
+  while (--i); 
+  return result;
+}
+
+#endif

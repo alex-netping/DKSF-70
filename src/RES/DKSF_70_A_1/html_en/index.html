@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<style>
+form {max-width:900px;}
+.dialog {
+position: fixed;
+width: 400px;
+margin-left: -200px;
+height: 200px;
+margin-top: -100px;
+z-index:100;
+border: solid 1px green;
+background-color: white;
+padding:15px;
+left:50%;
+top:50%;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;    
+}
+</style>
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="setup_get.cgi"></script>
+</head>
+<body>
+<script>
+menu('Home');
+
+function getid(id) {return document.getElementById(id);}
+
+function field(nm, val)
+{
+l='<tr><td class="parname">'+nm+'</td>'+
+'<td class="parinput">'+val+'</td></tr>';
+return l;
+}
+
+</script>
+<div id="middle">
+<div id="push_margin" style="height:1px"></div>
+<h2>Device identification</h2>
+<form action="/newserial.cgi" method="POST">
+<table>
+<script>
+l='';
+l+=field('Hostname',data.hostname);
+l+=field('Location',data.location);
+l+=field('Contact',data.contact);
+l+=field('Serial Number', data.serialnum==0xffffffff?'<input type="submit" value="generate&save"/>':data.serial);
+l+=field('MAC Address',data.mac);
+l+=field('Device Model',devname);
+l+=field('Firmware Version',fwver);
+l+=field('Hardware Version','1.'+hwver);
+var s=Math.floor(uptime_100ms/10);
+var m=Math.floor(s/60); s=s%60;
+var h=Math.floor(m/60); m=m%60;
+var d=Math.floor(h/24); h=h%24;
+l+=field('Uptime', '' + d + 'd ' + h + 'h ' + m + 'm ' + s + 's');
+document.write(l);
+</script>
+</table>
+</form>
+
+<h2>Network settings</h2>
+<form name="reboot_frm" action="/reboot.cgi" method="POST">
+<table>
+<script>
+l='';
+l+=field('IP Address',data.ip);
+l+=field('Netmask',data.mask);
+l+=field('Gateway',data.gate);
+document.write(l);
+</script>
+</table>
+<input type="hidden" name="reboot" value="!"/>
+<div style="text-align:right">
+<input class="send_button" type="button" value="Reboot" onclick="getid('reboot_dlg').style.visibility='visible'"/>
+</div>
+<div class="dialog" id="reboot_dlg">
+<p><span style="color:green;font-weight:bold">ATTENTION!</span> During firmware restart state of IO and Relays may 
+change for some short time. Also, state of IO and Relays may change because of Logic re-initialization.
+Do you want continue restart?
+</p>
+<div style="text-align:right">
+<input class="send_button" type="button" value="Cancel Reboot" onclick="getid('reboot_dlg').style.visibility='hidden'" />
+<input class="send_button" type="button" value="Proceed Reboot" onclick="getid('reboot_dlg').style.visibility='hidden'; document.reboot_frm.submit();" />
+</div>
+</div><!--dialog-->
+</form>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<workspace>
+  <project>
+    <path>$WS_DIR$\bootloader.ewp</path>
+  </project>
+  <project>
+    <path>$WS_DIR$\DKSF_70.ewp</path>
+  </project>
+  <batchBuild>
+    <batchDefinition>
+      <name>All</name>
+      <member>
+        <project>DKSF_70</project>
+        <configuration>Flash Debug</configuration>
+      </member>
+      <member>
+        <project>DKSF_70</project>
+        <configuration>RAM Debug</configuration>
+      </member>
+    </batchDefinition>
+  </batchBuild>
+</workspace>
+
+

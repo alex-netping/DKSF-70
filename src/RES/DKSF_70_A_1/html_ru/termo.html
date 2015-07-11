@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="termo_get.cgi"></script>
+<style>
+body {min-width:1330px;}
+form {max-width:1300px;}
+#middle {padding-top:30px}
+td {border-top:none}
+input[type="text"],input[type="button"] {width:120px;margin-left:0px;margin-right:0px;}
+caption input[type="button"] {width:auto;min-width:120px;}
+caption {caption-side:bottom;}
+.edtdiv 
+{
+position: absolute;
+z-index:100;
+border: solid 1px green;
+background-color: white;
+padding:25px;
+left:100;
+top:100;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;
+}
+#edt td,th {text-align:center;}
+#edt td {min-width:80px;}
+#ediv h2 {margin-top:0px;}
+</style>
+</head>
+<body>
+<!-- DEBUG
+<script src="menu.js"></script>
+-->
+<script>
+/*
+///DEBUGG
+var devname="Test NetPing";
+var hwmodel=52;
+var sys_name="Test NetPing",sys_location="";
+var packfmt={name:{offs:0,len:18},bottom:{offs:18,len:1},top:{offs:19,len:1},__len:26};var data=[{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'},{name:"",bottom:10,top:60,double_hyst:2,tval:0,status:'сбой'}];
+////
+*/
+menu('Термодатчики');
+
+var labels = {
+num:"Номер датчика", 
+name:"Памятка (до 16 симв.)", // char[18]
+ow_addr:"Уникальный номер 1W датчика",
+tval:"Текущая температура, &deg;C",
+status:"Статус",
+bottom:"Нижн. граница нормы, &deg;C",
+top:"Верхн. граница нормы, &deg;C",
+};
+
+function getid(a) { return document.getElementById(a); }
+
+var req=new XMLHttpRequest();
+
+function responce()
+{
+ if(req.readyState!=4) return;
+ var d,i,err=getid('error').style;
+ d=req.responseText;
+ if(req.status!=200 || !d || d=='') { err.visibility="visible"; return; }
+ err.visibility="hidden";
+ d=eval(d);
+ for(i in d)
+ {
+  getid('_tval'+i).innerHTML=d[i].tval;
+  getid('_status'+i).innerHTML=d[i].status;
+ }
+}
+
+function monitor()
+{
+ req.abort();
+ req.open("GET","/termo_data.cgi",true);
+ req.onreadystatechange=responce;
+ req.timeout=5900;
+ req.ontimeout=function(){getid('error').style.visibility="visible";};
+ req.send(null);
+}
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+ if(e) throw fld;
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function chk_ow_addr(f)
+{
+ if(f.value=="" || f.value.match(/^\s*$/)) return [0,0,0,0,0,0,0,0];
+ var a=f.value.match(/[0-9a-f]{2}/ig);
+ seterr(f, (!a) || (!a.length) || (a.length != 8));
+ for(var i in a) a[i]=parseInt(a[i],16);
+ return a;
+}
+
+function chkfrm() 
+{
+ var ow=Array(8);
+ var d='',err,ch;
+ for(ch in data)
+ {
+  f={};
+  f.name=frm['name'+ch].value;
+  if(typeof data[0].ow_addr != 'undefined') 
+  {
+   f.ow_addr=chk_ow_addr(frm['ow_addr'+ch]);
+   ow[ch]=f.ow_addr.toString();
+   if(ow[ch]!=([0,0,0,0,0,0,0,0]).toString()) for(var i=0;i<ch;++i) 
+   {
+    if(ow[i]==ow[ch]) 
+    { 
+     try { seterr(frm['ow_addr'+ch],true); } catch(e) {}
+     try { seterr(frm['ow_addr'+i],true); } catch(e) {}
+     alert("Дублирование уникальных номеров 1Wire датчиков недопустимо!"); 
+     throw ch;
+    }
+   }
+  }
+  f.top=range(frm['top'+ch],-70,150);
+  f.bottom=range(frm['bottom'+ch],-70,150);
+  err = false;
+  if(f.top<f.bottom) 
+  {
+   alert("Верхняя граница нормы задана меньше нижней!");
+   err|=true;
+  }
+  if(f.top-f.bottom<data[ch].double_hyst)
+  {
+   alert("Мин. диапазон нормы "+data[ch].double_hyst+" град.C!");
+   err|=true;  
+  }
+  try { seterr(frm['top'+ch],err); } catch(e) {}
+  seterr(frm['bottom'+ch],err);
+  d+=pack(packfmt,f);
+ } // for ch
+ document.sender.data.value=d;
+ document.sender.submit();
+ return false;
+}
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm" method="post" action="error.html">
+<table id="edt_x_ref">
+
+<caption class="send_button">
+<div id="error" class="alert" style="float:left;visibility:hidden;">Нет связи с устройством! Данные устарели!</div>
+<div style="float:right"><input type="button" value="Применить изменения" onclick="chkfrm()"/></div>
+<div style="clear:both"></div>
+</caption>
+
+<script>
+var i,l,n;
+
+function lbl(nm) { return '<tr><td class="parname">'+labels[nm]+'</td>';}
+
+function trf(nm,sty) {
+var l=lbl(nm);
+if(!sty) sty='';
+for(n in data) l+=
+'<td class="parinput"><input type="text" '+sty+' name="'+nm+n+'" value="'+data[n][nm]+'"/></td>';
+return l+'</tr>';
+}
+
+function shw(nm,aux){
+var l='';
+if(!aux) aux='';
+for(n in data)
+ l+='<td class="parinput" id="_'+nm+n+'" '+aux+'>'+data[n][nm]+'</td>';
+return lbl(nm)+l+'</tr>';
+}
+
+function chk(nm){
+var l='';
+for(n in data)
+ l+='<td class="parinput"><input type="checkbox" name="_'+nm+n+'"'+
+ (data[n][nm]?'checked=""':'')+'/></td>';
+return lbl(nm)+l+'</tr>';
+}
+
+l='';
+
+l+='<tr><th class="parname">Параметр</th>';
+for(n=0;n<data.length;++n) l+='<th class="parinput">Датчик '+(n+1)+'</th>';
+l+='</tr>';
+
+l+=trf('name','maxlength="16" style="color:#009020"');
+if(typeof data[0].ow_addr != 'undefined') l+=trf('ow_addr','style="font-size:9pt"');
+l+=shw('tval','style="font-weight:bold"');
+l+=shw('status');
+l+=trf('top');
+l+=trf('bottom');
+l+='<tr><td class="parname" id="edt_y_ref">Уведомления при смене статуса датчика</td>';
+for(n in data)
+ l+='<td class="parinput"><input type="button" name="notif_butt'+n+'" value="Настроить" onclick="edit_notif('+n+')"/></td>';
+l+='</tr>';
+
+document.write(l);
+if(typeof(frm)=='undefined') var frm=document.frm;
+setInterval(monitor,10000); 
+</script>
+</table>
+</form>
+
+<form name="sender" style="display:none" method="post" action="termo_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+<script>
+function set_nf_cb(ev,msk)
+{
+ f=document.notif_frm;
+ f['nf_log'+ev].checked=msk&1;
+ f['nf_syslog'+ev].checked=msk&2;
+ f['nf_email'+ev].checked=msk&4;
+ f['nf_sms'+ev].checked=msk&8;
+ f['nf_trap'+ev].checked=msk&16; 
+}
+
+function get_nf_cb_hex(ev)
+{
+ f=document.notif_frm;
+ msk=0;
+ if(f['nf_log'+ev].checked) msk|=1;
+ if(f['nf_syslog'+ev].checked) msk|=2;
+ if(f['nf_email'+ev].checked) msk|=4;
+ if(f['nf_sms'+ev].checked) msk|=8;
+ if(f['nf_trap'+ev].checked) msk|=16;
+ return hexb(msk,2);
+}
+
+function edit_notif(ch)
+{
+ if(getid('ediv').style.visibility=='visible') return;
+ var req=new XMLHttpRequest();
+ req.open("GET","/notify_get.cgi?nfid=01"+hexb(ch),false);//termo
+ req.send(null);
+ var d=req.responseText;
+ if(req.readyState!=4 || req.status!=200 || d=='error' || d=='') return;
+ d=eval(d);
+ getid('notif_ch').innerHTML=parseInt(ch)+1;
+ set_nf_cb('3',d.high);
+ set_nf_cb('2',d.norm);
+ set_nf_cb('1',d.low);
+ set_nf_cb('0',d.fail);
+ set_nf_cb('_r',d.report);
+ x=getid('edt_x_ref').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
+ y=getid('edt_y_ref').offsetTop+100;
+ getid('ediv').style.top=y+'px';
+ getid('ediv').style.left=x+'px'; 
+ getid('ediv').style.visibility='visible';
+}
+
+var nfreq=new XMLHttpRequest();
+
+function save_notif(y)
+{
+ if(!y)
+ {
+  getid('ediv').style.visibility='hidden';
+ }
+ else
+ {
+  nfreq.abort();
+  var ch=parseInt(getid('notif_ch').innerHTML)-1;
+  var d='data=01'+hexb(ch);//termo
+  d+=get_nf_cb_hex('3');
+  d+=get_nf_cb_hex('2');
+  d+=get_nf_cb_hex('1');
+  d+=get_nf_cb_hex('0');  
+  d+=get_nf_cb_hex('_r');
+  d+='0000'+'00000000'; // reserved
+  nfreq.onreadystatechange = function() 
+  {
+   if(nfreq.readyState==4 && nfreq.status==200)
+    getid('ediv').style.visibility='hidden';
+  }     
+  nfreq.open("POST","/notify_set.cgi",true);
+  nfreq.send(d);
+ }
+}
+</script>
+
+<div id="ediv" class="edtdiv">
+<form name="notif_frm">
+<h2>Уведомления для термодатчика&nbsp;<span id="notif_ch">0</span></h2>
+<table id="edt">
+<caption class="send_button">
+<input type="button" value="Отменить изменения" onclick="save_notif(0)"/>
+<input type="button" value="Сохранить изменения" onclick="save_notif(1)"/>
+</caption>
+
+<tr>
+<th style="text-align:left">Событие</th>
+<th>Журнал</th>
+<th>Syslog</th>
+<th>E-mail</th>
+<th>SMS</th>
+<th>SNMP Trap</th>
+</tr>
+
+<tr>
+<td style="text-align:left">Температура выше нормы</td>
+<td><input type="checkbox" name="nf_log3"/></td>
+<td><input type="checkbox" name="nf_syslog3"/></td>
+<td><input type="checkbox" name="nf_email3"/></td>
+<td><input type="checkbox" name="nf_sms3"/></td>
+<td><input type="checkbox" name="nf_trap3"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Температура в норме</td>
+<td><input type="checkbox" name="nf_log2"/></td>
+<td><input type="checkbox" name="nf_syslog2"/></td>
+<td><input type="checkbox" name="nf_email2"/></td>
+<td><input type="checkbox" name="nf_sms2"/></td>
+<td><input type="checkbox" name="nf_trap2"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Температура ниже нормы</td>
+<td><input type="checkbox" name="nf_log1"/></td>
+<td><input type="checkbox" name="nf_syslog1"/></td>
+<td><input type="checkbox" name="nf_email1"/></td>
+<td><input type="checkbox" name="nf_sms1"/></td>
+<td><input type="checkbox" name="nf_trap1"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Отказ датчика</td>
+<td><input type="checkbox" name="nf_log0"/></td>
+<td><input type="checkbox" name="nf_syslog0"/></td>
+<td><input type="checkbox" name="nf_email0"/></td>
+<td><input type="checkbox" name="nf_sms0"/></td>
+<td><input type="checkbox" name="nf_trap0"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Периодический отчёт</td>
+<td><input type="checkbox" name="nf_log_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_syslog_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_email_r"/></td>
+<td><input type="checkbox" name="nf_sms_r"/></td>
+<td><input type="checkbox" name="nf_trap_r" disabled=""/></td>
+</tr>
+
+</table>
+</form> <!--notif_frm-->
+</div><!--ediv-->
+
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

@@ -1,0 +1,125 @@
+
+#include "platform_setup.h"
+#ifdef TCN75A_MODUL
+#include "TCN75\TCN75A.h"
+
+#ifndef TCN75A_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+	#undef DEBUG_INPUT_PARAM
+  #undef DEBUG_OUTPUT_PARAM
+
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+	#define DEBUG_INPUT_PARAM(msg,val)	
+  #define DEBUG_OUTPUT_PARAM(msg,val)	
+  
+#endif
+
+#define TCN75A_AMB_TEMP   (0)
+#define TCN75A_CONFIG     (1)
+#define TCN75A_TEMP_HYST  (2)
+#define TCN75A_TEMP_LIMIT (3)
+
+//Для TCN75 нет установок битности преобразования.
+unsigned char def_settings=0;
+
+void tcn_data_write(uword sen_num,uword reg_addr,unsigned char* ptr,uword len);
+void tcn_data_read(uword sen_num,uword reg_addr,unsigned char* ptr,uword len);
+
+//Описание процедур модуля
+const struct exec_queue_rec tcn75a_init_table[]={{(upointer)tcn75a_init,TCN75A_INIT1_PRI|LAST_REC}};
+const struct exec_queue_rec tcn75a_exec_table[]={{(upointer)tcn75a_exec,TCN75A_EXEC1_PRI|LAST_REC}};
+const struct exec_queue_rec tcn75a_timer_table[]={{(upointer)tcn75a_timer,TIMER3|LAST_REC}};
+
+const struct module_rec tcn75a_struct={(upointer)tcn75a_init_table, 
+                                     (upointer)tcn75a_exec_table, 
+                                     (upointer)tcn75a_timer_table};
+                                     
+//void tcn_data_write(uword sen_num,uword reg_addr,unsigned char* ptr,uword len);
+
+///Счетчик таймаута
+unsigned short tcn75a_timeout=0;
+///Буфер хранения прочитанных температур
+unsigned short tcn75a_temp[TCN75_DET_MAX]={0};
+///Счетчик шагов алгоритма измерения температуры
+uword tcn75_step=0;
+
+
+
+void tcn75a_init(void)
+{
+  tcn75_step=TCN75A_INIT;
+}
+
+void tcn75a_exec(void)
+{
+  uword i=0;
+  switch (tcn75_step){
+  case TCN75A_INIT:       for (i=0;i<TCN75_DET_MAX;i++)
+                          {
+                              tcn_data_write(i,TCN75A_CONFIG,&def_settings,1);
+                          }
+                          tcn75_step=TCN75A_INIT_WAIT;
+                          break;  
+  case TCN75A_READ:       for (i=0;i<TCN75_DET_MAX;i++)
+                          {   
+                              signed correct=0;
+                              tcn_data_read(i,TCN75A_AMB_TEMP,(unsigned char*)&tcn75a_temp[i],sizeof(unsigned short));
+                              TCN75A_READ_COEF(i,correct);
+                              tcn75a_temp[i]+=(correct<<8)&0xff00;
+                          }
+                          tcn75_step=TCN75A_READ_WAIT;
+                          tcn75a_timeout=10;
+                          break;
+  case TCN75A_INIT_WAIT:       
+  case TCN75A_READ_WAIT:  if (!tcn75a_timeout)
+                              tcn75_step=TCN75A_READ;
+                          break;
+  }
+
+}
+
+void tcn75a_timer(void)
+{
+  if (tcn75a_timeout)
+    tcn75a_timeout--;
+}
+
+void tcn_data_write(uword sen_num,uword reg_addr,unsigned char* ptr,uword len)
+{
+  if (len==1)
+  {
+    sw_i2c_write(sen_num,reg_addr,ptr,1);
+  }
+  else if (len==2)
+  {
+    unsigned short temp=(*((unsigned short*)ptr)<<8)&0xff00;
+    temp|=(*((unsigned short*)ptr)&0xff00)>>8;
+    sw_i2c_write(sen_num,reg_addr,(unsigned char*)&temp,2);
+  }
+  return;
+}
+
+void tcn_data_read(uword sen_num,uword reg_addr,unsigned char* ptr,uword len)
+{
+  if (len==1)
+  {
+    sw_i2c_read(sen_num,reg_addr,ptr,1);
+  }
+  else if (len==2)
+  {
+    unsigned short temp=0;
+    sw_i2c_read(sen_num,reg_addr,(unsigned char*)&temp,2);
+    *((unsigned short*)ptr)=(temp<<8)&0xff00;
+    *((unsigned short*)ptr)|=(temp&0xff00)>>8;
+  }
+  return;
+ 
+}
+#endif

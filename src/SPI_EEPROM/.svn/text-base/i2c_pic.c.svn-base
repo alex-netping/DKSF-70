@@ -1,0 +1,195 @@
+#include "platform_setup.h"
+
+#if GLOBAL_OPTIMIZATION == PIC18
+
+#ifdef I2C_MODUL
+
+#ifndef I2C_DEBUG
+	
+	#undef DEBUG_SHOW_TIME_LINE
+	#undef DEBUG_MSG			
+	#undef DEBUG_PROC_START
+	#undef DEBUG_PROC_END
+    #undef DEBUG_INPUT_PARAM	
+    #undef DEBUG_OUTPUT_PARAM
+	#define DEBUG_SHOW_TIME_LINE
+	#define DEBUG_MSG			
+	#define DEBUG_PROC_START(msg)
+	#define DEBUG_PROC_END(msg)
+    #define DEBUG_INPUT_PARAM(msg,val)	
+    #define DEBUG_OUTPUT_PARAM(msg,val)	
+	
+#endif
+
+//Описание переменных модуля
+uword i2c_hw_addr;
+uword i2c_hw_block_size;
+unsigned short i2c_hw_size;
+
+//Описание констант модуля
+#ifndef I2C_PIC_BRG									// Если ранее не был определен делитель для установки скорости i2c
+	#define	I2C_PIC_BRG		24					// Проинициализировать его по умолчанию (минимальная скорость)
+#endif
+#define ACK_LAST	1		
+#define ACK_NEXT	0		
+
+const struct exec_queue_rec i2c_init_table[]={{(upointer)i2c_init,I2C_INIT1_PRI|LAST_REC}};
+const struct module_rec i2c_struct={(upointer)i2c_init_table, NULL, NULL};
+
+//Описание процедур модуля
+void i2c_start_read(upointer addr);
+void i2c_write_byte(uword x);
+unsigned char i2c_read_byte( unsigned char isLast );
+void i2c_start();
+void i2c_restart();
+void i2c_stop();
+
+void i2c_init(void)                                                                       //Процедура инициализации I2C на PIC18
+{
+  unsigned char tmp;
+  DEBUG_PROC_START("i2c_init");
+  i2c_hw_addr = I2C_HW_ADDR_DEF;
+  i2c_hw_size = I2C_HW_SIZE_DEF;
+  i2c_hw_block_size = I2C_HW_BLOCK_SIZE_DEF;
+  
+  SSPCON2=0x0;	
+  SSPSTAT=0x80;	
+  SSPCON1=0x28;  
+  TRISC|=0x18;	
+  PORTC|=0x18; 	
+	
+  SSPADD=I2C_PIC_BRG; 
+
+  
+  DEBUG_PROC_END("i2c_init");
+}
+
+void i2c_read(upointer addr, unsigned char *buf, unsigned short len)
+{
+  DEBUG_PROC_START("i2c_read");
+  DEBUG_INPUT_PARAM("addr:%x", addr);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  i2c_start_read(addr);
+  i2c_restart();
+  i2c_write_byte(i2c_hw_addr|0x1);	
+  while(--len)
+  { 	
+    *buf = i2c_read_byte(ACK_NEXT);  	
+    buf++;		
+  }	
+  *buf=i2c_read_byte(ACK_LAST);	
+  i2c_stop();	
+  DEBUG_PROC_END("i2c_read"); 
+}
+
+void i2c_write(upointer addr, unsigned char *buf, unsigned short len)
+{
+  DEBUG_PROC_START("i2c_write");
+  DEBUG_INPUT_PARAM("addr:%x", addr);
+  DEBUG_INPUT_PARAM("*buf:%x", (upointer)buf);
+  DEBUG_INPUT_PARAM("len:%u", len);
+  i2c_start_read(addr);
+  do
+  { 
+    i2c_write_byte(*buf); 
+    buf++; 
+    addr++;
+    if(!(addr&(i2c_hw_block_size - 1)))
+    { 
+      i2c_stop();
+      i2c_start_read(addr);	  
+    }		
+  }while(--len);
+  i2c_stop(); 
+  DEBUG_PROC_END("i2c_write");
+}
+
+void i2c_start_read(upointer addr)
+{
+  DEBUG_PROC_START("i2c_start_read");
+  DEBUG_INPUT_PARAM("addr:%x", addr);
+  BCLIF=0;
+  while(1)
+  {
+    i2c_start();
+    i2c_write_byte(i2c_hw_addr);
+    if(!ACKSTAT) 
+    { 
+      if(i2c_hw_size > 2)i2c_write_byte(addr>>8);
+      i2c_write_byte(addr&0xff);
+      DEBUG_PROC_END("i2c_start_read");
+      return;
+    }
+    WDT_RESET;
+    i2c_stop();
+  }
+  DEBUG_PROC_END("i2c_start_read");
+}
+
+void i2c_start()
+{
+  DEBUG_PROC_START("i2c_start");
+  SEN=1;
+  while(SEN);
+  DEBUG_PROC_END("i2c_start");
+}
+
+void i2c_restart()
+{
+  DEBUG_PROC_START("i2c_restart");
+  RSEN=1;
+  while(RSEN);
+  DEBUG_PROC_END("i2c_restart");	
+}
+
+void i2c_stop()
+{
+  DEBUG_PROC_START("i2c_stop");
+  PEN=1;
+  while(PEN);
+  DEBUG_PROC_END("i2c_stop");
+}
+
+
+void i2c_write_byte(uword x)
+{
+  DEBUG_PROC_START("i2c_write_byte");
+  DEBUG_INPUT_PARAM("data:%x", x);
+  #if CPU_TYPE == _CPU_PIC18F4620
+	SSPIF=0;  
+    SSPBUF=x; 
+    while(!SSPIF);
+  #elif CPU_TYPE == _CPU_PIC18F2620
+    SSPIF=0;
+    SSPBUF=x; 
+    while(!SSPIF); 
+  #elif CPU_TYPE == _CPU_PIC18F452
+    SSPBUF=x;
+    while(RW);	
+  #else
+    #error "CPU not defined!!!"
+  #endif
+  DEBUG_PROC_END("i2c_write_byte");
+}
+
+unsigned char i2c_read_byte( unsigned char isLast )
+{
+  DEBUG_PROC_START("i2c_read_byte");
+  DEBUG_INPUT_PARAM("isLast:%x", isLast);
+  SSPCON2=8;
+  while(RCEN);
+  ACKDT=0;
+  if(isLast) ACKDT=1;
+  ACKEN=1;
+  while(ACKEN);
+  DEBUG_OUTPUT_PARAM("data:%x", SSPBUF);
+  DEBUG_PROC_END("i2c_read_byte");
+  return (SSPBUF);
+} 
+
+
+
+#endif
+
+#endif

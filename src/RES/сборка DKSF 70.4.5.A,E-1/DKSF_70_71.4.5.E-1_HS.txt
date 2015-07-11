@@ -1,0 +1,142 @@
+DKSF 70.4.4.A-1
+DKSF 70.4.4.E-1
+DKSF 71.4.4.A-1
+DKSF 71.4.4.E-1
+14 May 2015
+
+- fixed mutual interference (clearing or damaging) of current (smoke) sensor and relay's schedule 
+  on setup saving or resetting parameters to default
+- fixed /at.html debug interface, now it's possible to send AT commands to the modem and check responce
+- enchanced automatic assembly of .NPU firmware update files  
+
+DKSF 70.4.4.A-1
+DKSF 70.4.4.E-1
+DKSF 71.4.4.A-1
+DKSF 71.4.4.E-1
+12 Feb 2015
+
+- enchanced sendmail operation
+-- обрыв соединения SMTP сервером после команды QUIT не вызывает повтора посылки
+-- break of TCP connection by Microsoft SMTP server after QUIT command now don't cause e-mail re-sending
+-- implemented SMTP session timeout
+-- implemented checkbox in web-interface to disable sendmail if necessary
+-- enchanced TCP Client reliability
+-- erasing of SMTP server address in web-interface now stops service
+- enchanced reliability of GSM modem operation
+
+DKSF 70.4.2.A-1
+DKSF 70.4.2.E-1
+DKSF 71.4.2.A-1
+DKSF 71.4.2.E-1
+22.01.2015
+
+- fixed insufficient resources for pingers
+
+DKSF 70.4.2.A-1
+DKSF 70.4.2.E-1
+DKSF 71.4.2.A-1
+DKSF 71.4.2.E-1
+29.12.2014
+
+- notification for Discrete IO now works for Output mode the same way as for Input mode
+- багфикс DNS, из-за которого в версии 7x.4.1 отказал полностью sendmail- bugfix of DNS, this was the cause of complete inoperational sendmail in v70/71.4.1
+- bugxif of saving of CC: fields on e-mail setup web page
+- bugfix of Test buttons for SNMP Setter on Logic web page, it was inoperational in IE
+- багфикс страницы обновления прошивки, в версии 4.1 не давал залить предыдущую прошивку;
+- bugfiz of Firmware Update web page; in 70/71.4.1 it was impossible to downgrade,
+  now it works with warning  
+- minor web interface layout enchancements
+
+DKSF 70.4.1.A-1
+DKSF 70.4.1.E-1
+DKSF 71.4.1.A-1
+DKSF 71.4.1.E-1
+24.12.2014
+
+- it was added standart NetPing modules of pinging watchdog and weekly schedule, with output to Relay
+- implemented notifications for switching of Relay (the same as for Discrete IO)
+- implemented up to four destination e-mail addresses (cc:)
+- implemented user-set textual memo for Discrete IO line levels, displayed in web-interface, log, e-mails
+- actual logic level on Discrete IO in Output mode is available now via SNMP variable npIoLevelIn,
+  via CGI API, via SMS requests, and available for Logic rules
+- implemented sending of arbitrary SMS texts via CGI API and SNMP SET request
+- реализована поддержка CORS заголовков и команд в http сервере, что даёт возможность задействовать
+  CGI API прибора через XMLHttpRequest, без дополнительных ухищрений, предназначенных для обхода
+  Same Origin Policy веб-браузеров
+- implemented support of CORS headers and requests in embedded HTTP server for easy usage of CGI API via
+  standart XMLHttpRequest, without special measures (like JSON-P) because of Same Origin Policy in web-browsers
+- implemented complete disabling of all notifications with one checkbox on Settings web-page,
+  with 'Notification disabled' warning in navigation bar of web-interface
+- restored pinger in SMS module
+- restored notifications via SMS from Watchdog, with checkbox SMS web-page
+- implemented warning in case of firmware downgrade
+- large amount of code refactoring (it have no significant influence on user experience)
+- support of hardware model without GSM module and serial ports
+
+-----------------------------------------
+
+Sample JavaScript code for sending SMS:
+
+var r = new XMLHttpRequest();
+r.open('POST', 'http://192.168.0.100/sendsms.cgi', true, 'visor', 'ping');
+r.withCredentials = true;
+r.send('[+79130000000] Houston, we have a problem!');
+
+Сначала номер адресата в квадратных скобках, затем через пробел текст сообщения.
+Data for send() is started with phone number in square brackets, then single space and message text.
+You can send text up to four phone numbers. For this, place in square brackets list of numbers, divided by comma, without spaces.
+If no square brackets in the beginning of data, text will be sent to the phone numbers on the SMS set-up page of web-interface.
+
+If data format was parsed without error, CGI returns JS code:
+
+sendsms_result('ok');
+
+Result of texting have no effect on returned value!
+CGI just initiating sending of SMS!
+
+-----------------------------------------
+
+You can send SMS via SNMP.
+For this, put destination and text data formatted as demonstrated above into npGsmSendSms.0 variable via SNMP SET request.
+See MIB file for variable OID value.
+
+-----------------------------------------
+
+DKSF 70.3.5.A-1
+DKSF 70.3.5.E-1
+28.11.2014
+
+- fixed probability of dropping outgoing SNMP Trap and SMS notofications
+- enchanced realuability of e-mail sending; implemented LOGIN or PLAIN authentification
+- fixed bugs in IO line handling, now IO pulse counters works correctly,
+  SMS notifications are correct,
+  after change of direction of IO line it's state is displayed correctly in Web interface
+- added web-page for determining of unique Id number of 1-Wire sensor
+- bugfix in DNS client, fixed probability of 'forgetting' of IP in 'digital' notation,
+  fixed renewal of record in DNS table
+- fixed JSON-P API, bugfix of relay.cgi, relhum.cgi now returns relhum_result()
+- in the MIB file, it was fixed indices of relay and IO tables,
+  added value for flipping relay,
+  values for Humidity sensor status has changed to the correct ones
+- tuned timing in 1-Wire bus driver for better realiability
+- changed tuning of TCP for better realiability during firmware update.
+  (fails was not fatal, can be recowered by repeating firmware update).
+- cosmetic HTML edits in web interface, enchancements of English version
+
+DKSF 70.3.4.A-1
+DKSF 70.3.4.E-1
+14.08.2014
+
+- CS NORM js bugfix
+- sendmail bugfix
+- Summary Report translated to Eng
+
+DKSF 70.3.3.E-1
+14.08.2014
+
+- first English release
+- new JSON-P HTTP API for external control
+- MTU decreased to 1100 byte
+- bugfix of web page of FW update for IE9+ compatibility
+- CS NORM input in Logic
+- minor bugfix and new features

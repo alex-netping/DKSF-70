@@ -1,0 +1,18 @@
+#define MODULE5  &icmp_struct
+#define MODULE5_INITS  ICMP_INITS
+#define MODULE5_EXECS  ICMP_EXECS
+#define MODULE5_TIMERS ICMP_TIMERS
+#define ICMP_MODUL		//Флажок включения модуля
+//#define ICMP_DEBUG		//Флажок включения отладки в модуле
+///Определения приоритетов INIT/EXEC
+#define ICMP_INIT1_PRI	30
+//---- Переопределение внешних связей модуля----------
+///Функция расчета CRC
+#define ICMP_CALC_CRC(buf, len)   crc_calc(buf, len)
+///Функция возвращающая значение CRC
+#define ICMP_GET_CRC crc_get()
+
+///Функция разбора пришедшего ICMP_Echo_reply пакета
+#define ICMP_PARSING 
+
+#include "icmp\icmp.h"

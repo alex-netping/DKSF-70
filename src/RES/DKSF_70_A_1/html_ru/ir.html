@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<style>
+body {min-width:1100px;}
+table {width:830px;}
+th {text-align:left;}
+.butt {width:130px;}
+.filler {width:30%;}
+.selnum {width:50px;}
+.cmdlabelin {width:302px;}
+.longbutt {width:200px;}
+.num {width:40px;text-align:center;font-weight:bold;}
+.cmdlabel {width:260px;text-align:left;}
+.play {width:100px;text-align:center;}
+.gap {width:30px;}
+tr.noborder td {border:none;}
+</style>
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="ir_get.cgi"></script>
+<script>
+/*
+//// DEBUGG
+var devname='Test UniPing';
+var hwmodel=52;
+var hwver=5;
+data={ir_status:255,ir_timeout:0,ir_proto_state:16,useIO:1,irc_tr_ver:[0,2,3,4,5,6],
+labels:["Toshiba TV Pause Frame","Toshiba TV P2","","","Sony TV P5","","","Toshiba TV P8","Mits AC Prog 1 On","Mits AC Off","","","","","","Toshiba TV Menu/OK"]};
+//
+*/
+
+function getid(id) {return document.getElementById(id);}
+
+function input(label, name)
+{
+  var l='<tr><td class="parname">'+label+'</td>';
+  for(ch=0;ch<Nch;++ch) l+=fmt('<td class="parinput"><input type="text" name="%1" value="%2"></td>',{1:name+ch,2:data[ch][name]});
+  return l+'</tr>';
+}
+
+function hexb(b) {if(b<0) b=0; if(b>255) b=255; return (b<16?'0':'')+b.toString(16);}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"#ffffff";
+ if(e) throw fld;
+}
+
+</script>
+</head>
+<body>
+<script>
+menu('ИК команды');
+
+var req=new XMLHttpRequest();
+var tout;
+
+function chk_readystate() 
+{
+ if (req.readyState == 4)
+ {
+  if(tout) { clearTimeout(tout); tout=0; }
+  setTimeout("disable_b(false)",1000);
+ }
+}
+
+function cmdsave()
+{
+ var d=[3,document.frm.cmdnum.selectedIndex,0];
+ var s=document.frm.cmdlabel.value;
+ s=s.replace(/\"/g,''); 
+ seterr(document.frm.cmdlabel,s=='');
+ d[2]=s.length;
+ for(var i=0;i<s.length;++i) d[3+i]=w1251(s.charCodeAt(i));
+ for(var i in d) d[i]=hexb(d[i]);
+ document.sender.data.value=d.join('');
+ document.sender.submit();
+}
+
+function rec()
+{
+ req.abort();
+ req.open("POST","/ir_set.cgi",true);
+ req.onreadystatechange=chk_readystate;  
+ req.send('data=010000');
+ if(tout) { clearTimeout(tout); tout=0; }
+ tout=setTimeout("disable_b(false)",10000);
+}
+
+function playcmd(cmd_n)
+{
+ disable_b(true);
+ req.abort();
+ req.open("POST","/ir_set.cgi",true); 
+ req.onreadystatechange=chk_readystate;  
+ req.send('data=02'+hexb(cmd_n)+'00');
+ if(tout) { clearTimeout(tout); tout=0; }
+ tout=setTimeout("disable_b(false)",10000);
+}
+
+function disable_b(dis)
+{
+ for(var n=0;n<data.labels.length;++n) document.frm['b_cmd'+n].disabled=dis;
+ document.frm.b_playbuf.disabled=dis;
+ document.frm.b_rec.disabled=dis;
+ document.frm.b_save.disabled=dis;
+}
+
+</script>
+<div id="middle">
+<div id="push_margin"></div>
+<form name="frm" method="post" action="error.html" >
+<h2>Запоминание ИК команды</h2>
+<table>
+<tr>
+<th>Временный буфер ИК трансивера</th>
+<th></th>
+<th class="num">N</th>
+<th class="cmdlabel">Памятка (устройство, команда)</th>
+<th></th>
+</tr>
+<tr class="noborder">
+<td>
+<input class="butt" type="button" name="b_rec" value="Начать запись" onClick="rec()">
+<input class="butt" type="button" name="b_playbuf" value="Play/Test" onClick="playcmd(0xff)"/>
+</td>
+<td></td>
+<td><select class="selnum" name="cmdnum">
+<script>
+for(n=0;n<data.labels.length;++n) document.write('<option>'+(n+1)+'</option>');
+</script>
+</select>
+</td><td>
+<input class="cmdlabelin" name ="cmdlabel" maxlength="30"/>
+</td><td>
+<input class="longbutt" type="button" name="b_save" value="Сохранить" onclick="cmdsave()"/>
+</td>
+</tr>
+<tr class="noborder">
+<td colspan="99">
+<p class="note">
+Перед записью ИК команд внимательно изучите руководство пользователя!<br/>
+<script>
+var v=data.irc_tr_ver;
+var l='Версия подключенного модуля ИК управления IRC-TR v2 : ';
+l+='HW '+v[0]+'.'+v[1]+' / BL '+v[2]+'.'+v[3]+' / FW '+v[4]+'.'+v[5];
+if(v[0]==0) l='Внешний модуль ИК управления IRC-TR v2 отсутствует или неисправен!';
+document.write(l);
+</script>
+</p>
+</td>
+</tr>
+</table>
+
+<h2>Записанные ИК команды</h2>
+<table>
+<tr>
+<th class="num">N</th>
+<th class="label">Памятка</th>
+<th class="play">Play</th>
+<th class="gap"></th>
+<th class="num">N</th>
+<th class="label">Памятка</th>
+<th class="play">Play</th>
+<th></th>
+</tr>
+<script>
+function command(n)
+{
+ var l='<td class="num">'+(n+1)+'</td>'+
+ '<td class="cmdlabel">'+data.labels[n]+'&nbsp;</td>'+
+ '<td><input class="play" type="button" name="b_cmd'+n+'" value=">" onClick="playcmd('+n+')"/></td>';
+ return l;
+}
+
+var l='',cmd_n=data.labels.length;
+for(n=0;n<cmd_n/2;++n)
+{
+ l+='<tr> '+command(n)+' <td class="gap"></td> '+command(n+cmd_n/2)+' <td></td> </tr>';
+}
+document.write(l);
+disable_b(true);
+setTimeout("disable_b(false)",1000);
+</script>
+</table>
+</form>
+
+<form name="sender" style="display:none" method="post" action="ir_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

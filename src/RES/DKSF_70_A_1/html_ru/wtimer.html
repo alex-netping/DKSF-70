@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!-- <script src="menu.js"></script> -->
+<script src="/wtimer_get.cgi"></script>
+<style>
+form {width:800px}
+input {text-align:center;margin:0px}
+td:first-child {padding-left:8px}
+tr.schedule_top_hdrs td {font-weight:bold;text-align:center;border-top:none}
+tr.centered td {text-align:center}
+.left_th {text-align:left;font-weight:bold;padding-right:10px}
+input.hhmm {width:65px}
+table.hol input {width:82px}
+table.hol select {width:82px}
+.send_button_container input, select {width:168px}
+.label {color:#aaaaaa;font-size:10pt}
+.hmspar {text-align:left;padding-left:10px}
+.hms {text-align:right}
+</style>
+<script>
+/*
+/// DEBUGGG
+var devname='NetPing WTimer Test';
+var hwmodel=52;
+var sys_name="testhostname",sys_location="-";
+var packfmt={flags:{offs:0,len:1},same_as_prev_day:{offs:1,len:1},schedule:{offs:2,len:160},cycle_time:{offs:164,len:4},active_time:{offs:168,len:4},__len:208};
+var hol_day=[255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255];
+var hol_month=[255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255];
+var hol_replacement=[0,0,0,0,0,0,0,0,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255];
+var data=[{flags:0,same_as_prev_day:0,schedule:[[60,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,61,866,867,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535]],cycle_time:600,active_time:0,ntp_is_ok:1,period_point:403}, {flags:255,same_as_prev_day:255,schedule:[[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535],[65535,65535,65535,65535,65535,65535,65535,65535]],cycle_time:4294967295,active_time:4294967295,ntp_is_ok:1,period_point:3585634603}];
+var schedule_day_count=10;
+var schedule_points_count=8;
+/////
+*/
+var doc=document;
+var schedule_day_count_max=data[0].schedule.length;
+var schedule_points_count_max = data[0].schedule[0].length;
+var holidays_n = 8;
+var unused_entry_value = 0xffff;
+var unused_entry_value_short = 0xff;
+
+var selected_channel=0;
+var this_ch = location.href.match(/.html\?ch=([0-9]+)$/)
+if(this_ch && this_ch[1]>0) selected_channel = this_ch[1]-1;
+
+var clock;
+var dirty=false;
+
+var ntpstat=[
+'адрес NTP сервера не задан',
+'время не синхронизировано с сервером',
+'время установлено от основного NTP сервера',
+'время установлено от резервного NTP сервера',
+'NTP серверы недоступны'
+];
+
+var month=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+var schedule_day=['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС', 'П 1', 'П 2', 'П 3'];
+
+function getid(id) {return document.getElementById(id);}
+
+var req=new XMLHttpRequest();
+var reqtimer;
+var watchtimer;
+
+function no_responce()
+{
+ clearInterval(watchtimer);
+ req.abort();
+ //getid('reqerror').style.visibility="visible";
+}
+
+function responce()
+{
+ var d;
+ clearTimeout(reqtimer);
+ clearInterval(watchtimer);
+ d=req.responseText;
+ if(req.status!=200 || !d || d=='') 
+ {
+  getid('ntpstat').innerHTML='сбой связи с устройством'; 
+  return; 
+ }
+ //err.visibility="hidden";
+ d=eval('('+d+')');
+ if(!clock) clock = new Date();
+ clock.setTime((d.ltime+d.tz*3600+(d.dst?3600:0))*1000-1000);
+ advance_clock();
+ var utc='UTC'+(d.tz>=0?'+':'-')+d.tz; // 19.04.2013
+ if(d.dst) utc+=', DST';
+ getid('timezone').innerHTML=utc;
+ getid('ntpstat').innerHTML=ntpstat[d.ntp_stat];
+ if(typeof d.time_ok!='undefined')
+   getid('time').style.color=d.time_ok?'black':'red';
+ if(!dirty)
+ {
+  var a=d.active_point[selected_channel];
+  var j,k;
+  for (j=0;j<schedule_day_count;j++) 
+   for (k=0; k<schedule_points_count; k++)
+    doc.frm[inm('schedule',selected_channel,j,k)].style.fontWeight="";
+  for (j=0;j<holidays_n;j++)
+   doc.frm[inm('holiday_date',selected_channel,j)].style.fontWeight="";
+  if(a.row!=-1) doc.frm[inm('schedule',selected_channel,a.row,a.col)].style.fontWeight="bold";
+  if(a.hol_idx!=-1) doc.frm[inm('holiday_date',selected_channel,a.hol_idx)].style.fontWeight="bold";
+ }
+}
+
+function watch() {if(req.readyState==4) responce();}
+
+function monitor()
+{
+ req.abort();
+ req.open("GET","/wtimer_stat.cgi",true);
+ req.send(null);
+ reqtimer=setTimeout(no_responce,5990);
+ watchtimer=setInterval(watch,200);
+}
+
+monitor();
+setInterval(monitor,60000); 
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function pack(fmt, data) // special ver. with Arrays
+{
+  var d=new Array();
+  var i,l,n,x,offs;
+  for(n=0;n<fmt.__len;++n) d[n]='00';
+  for(i in fmt) 
+  {
+   if(typeof(data[i])=='undefined') { continue; }
+   x=data[i]; f=fmt[i];
+   switch(typeof x) 
+   {
+   case 'string':
+    l=x.length; if(l>f.len-1) l=f.len-1;
+    d[f.offs]=hexb(l);
+    for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+    break;
+   case 'object':
+    if(!(x instanceof Array)) break;
+    if(x[0] instanceof Array) // 2D array
+    {
+     type_size = Math.floor(f.len/(x.length*x[0].length));
+     offs=f.offs;     
+     for (ir=0; ir<x.length; ir++)
+      for (ic=0; ic<x[0].length; ic++)
+      {
+       v = Number(x[ir][ic]);
+       for(n=0;n<type_size;++n) { d[offs++]=hexb(v&0xFF); v>>=8; }          
+      }
+    }
+    else
+    { // 1D array
+     type_size = Math.floor(f.len/x.length);
+     offs=f.offs;
+     for (ir=0; ir<x.length; ir++)
+     {
+      v = Number(x[ir]);
+      for(n=0;n<type_size;++n) { d[offs++]=hexb(v&0xFF); v>>=8; }          
+     }
+    }
+    break;
+   default:
+    v=Number(x); 
+    for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(v&0xFF); v>>=8; }
+    break;
+   }
+  }
+  return d.join('');
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+ if(e) throw fld;
+}
+
+function range(fld,a,b) // v4 leading zero aware
+{
+ v=parseInt(fld.value,10); seterr(fld,isNaN(v)||v<a||v>b); return v;
+}
+
+function write_schedule_point(m)
+{
+	var hh=Math.floor(m/60);
+	var mm=m%60;
+	var res='';
+	if (m!=unused_entry_value)
+	{
+		if(hh<10) res+='0';	
+		res +=hh +':';
+		if (mm<10) res+=0;
+		res+=mm;
+	}
+	else
+		res = '-';
+	return res;
+};
+
+function read_schedule_point(fld)
+{
+  res=0;
+  e=false;
+  if (fld.value == '-' || fld.value =='') 
+    res = unused_entry_value;
+  else
+  {
+    reg = new RegExp('([0-9]+):([0-9]+)');
+    matches = reg.exec(fld.value);
+    if (matches!=null)
+    {
+      v = parseInt(matches[1],10); e |= isNaN(v)||v<0||v>23; res = v*60; 
+      v = parseInt(matches[2],10); e |= isNaN(v)||v<0||v>59; res += v; 
+    }
+    else
+      e=true;
+  }
+  seterr(fld,e);
+  return res;
+};
+
+function write_checked_from_bit(f, i){  return (f >> i & 0x0001) ? 'checked="1"':'';};
+
+
+function write_holiday_date(d,m)
+{
+ if(d==unused_entry_value_short || m==unused_entry_value_short)
+  return '-';
+ var r=''+d+'.';
+ if(m<10) r+='0';
+ r+=m;
+ return r;
+};
+
+function read_holiday_date(fld)
+{
+ var e=false,dd,mm;
+ if (fld.value == '-' || fld.value =='')
+ return {day:unused_entry_value_short, month:unused_entry_value_short};
+ matches = fld.value.match(/([0-9]+)[.\/]([0-9]+)/);
+ seterr(fld,matches==null);
+ mm = parseInt(matches[2],10); 
+ seterr(fld, isNaN(mm)||mm<1||mm>12);
+ dd = parseInt(matches[1],10); 
+ seterr(fld, isNaN(dd)||dd<1||dd>[0,31,29,31,30,31,30,31,31,30,31,30,31][mm]);
+ return {day:dd,month:mm};
+};
+
+function inm(name,i,j,k)
+{
+ var r=name;
+ if(typeof(i)=='undefined') return r;
+ r+='_'+i;
+ if(typeof(j)=='undefined') return r;
+ r+='_'+j;
+ if(typeof(k)=='undefined') return r;
+ return r+'_'+k;
+}
+
+function write_selected(i, v) { return i==v? 'selected=""':'';};
+
+function check_submit_frm() // bugfix 6.05.2013
+{
+  var i,j,k,d;
+  d=data[selected_channel];
+  i=selected_channel;
+  try
+  {
+    // flags
+    d.flags = 0;
+    switch(document.frm.default_mode.selectedIndex) //18.08.2014
+    {
+    case 0: break;
+    case 1: d.flags|=4; break;
+    case 2: d.flags|=16; break;
+    }
+    /*
+    if(doc.frm.active_state_is_on[0].checked) d.flags|=4;
+    // cycle_time
+    d.cycle_time  = range(doc.frm.cycle_time_h, 0, 9999)*60*60 +
+                    range(doc.frm.cycle_time_m, 0, 9999)*60 +
+                    range(doc.frm.cycle_time_s, 0, 9999);
+    // active_time
+    d.active_time =	range(doc.frm.active_time_h, 0, 9999)*60*60 + 
+                    range(doc.frm.active_time_m, 0, 9999)*60 + 
+                    range(doc.frm.active_time_s, 0, 9999);
+    */
+    //schedule
+    //  same_as_prev_day
+    d.same_as_prev_day = 0;
+    for (j=1;j<=6;++j) if(doc.frm['same_as_prev_'+i+'_'+j].checked) d.same_as_prev_day |= 1<<j;
+    // check increasing time
+    var sch,time;
+    for (j=0;j<schedule_day_count_max;++j)
+    {
+      sch=data[i].schedule[j];
+      time=sch[0];
+      for (k=1; k<schedule_points_count_max; ++k)
+      {
+       if(sch[k]==0xffff) continue;
+       if(time!=0xffff && sch[k]<=time) 
+       {
+        try { seterr(doc.frm[inm('schedule',i,j,k)], true); } catch(e) {}
+        alert('Время событий должно нарастать в строке расписания слева направо!');
+        throw 0;
+       }
+       time=sch[k];
+      }
+    }
+  }  
+  catch(e)
+    {return false;}
+    
+  var pd=pack(packfmt, d);
+  for(k in hol_day) pd+=hexb(hol_day[k]);
+  for(k in hol_month) pd+=hexb(hol_month[k]);
+  for(k in hol_replacement) pd+=hexb(hol_replacement[k]);
+  doc.sender.data.value=pd;
+  doc.sender.action= '/wtm'+selected_channel+'_set.cgi';
+  doc.sender.submit();
+  return false;
+}
+
+function prev()
+{
+ var f,prevf,v,d,p;
+ for(d=1;d<=6;++d) for(p=0;p<schedule_points_count;++p) 
+ {
+  prevf=doc.frm[inm('schedule', selected_channel, d-1, p)];
+  f=doc.frm[inm('schedule', selected_channel, d, p)];
+  if(doc.frm[inm('same_as_prev', selected_channel, d)].checked) 
+  {
+   v=prevf.value;
+   f.disabled=true;
+   f.style.backgroundColor="";
+  }
+  else
+  {
+   v=write_schedule_point(data[selected_channel].schedule[d][p]);
+   f.disabled=false;
+  }
+  f.value=v;
+ }
+}
+
+function change_point(fld,day,pnt)
+{
+ var d=read_schedule_point(fld);
+ data[selected_channel].schedule[day][pnt]=d;
+ fld.value=write_schedule_point(d);
+ prev();
+ dirty=true;
+ fld.style.fontWeight="";  
+}
+
+function change_holiday_date(fld,n)
+{
+ d=read_holiday_date(fld);
+ hol_month[n]=d.month;
+ hol_day[n]=d.day;
+ fld.value=write_holiday_date(d.day,d.month);
+ dirty=true;
+ fld.style.fontWeight=""; 
+}
+
+function advance_clock()
+{
+ if(!clock) return;
+ clock.setTime(clock.getTime()+1000);
+ var hh=clock.getUTCHours();
+ var mm=clock.getUTCMinutes();
+ var ss=clock.getUTCSeconds();
+ var wd=clock.getUTCDay();
+ if(hh<10) hh='0'+hh;
+ if(mm<10) mm='0'+mm;
+ if(ss<10) ss='0'+ss;
+ if(wd==0) wd=7; --wd; // 0=Sun->0=Mon
+ getid('time').innerHTML=
+  ''+hh+':'+mm+':'+ss+', '+
+  schedule_day[wd]+', '+
+  clock.getUTCDate()+' '+
+  month[clock.getUTCMonth()]+' '+
+  clock.getUTCFullYear();
+}
+
+setInterval("advance_clock()",1000);
+
+</script>
+</head>
+
+<body>
+<script>
+menu('Расписание');
+</script>
+<div id="middle">
+<form name="frm" action="error.html" method="post" onsubmit="return false">
+
+<table cellspacing="0" style="width:700px; display:none">
+<tr><td colspan="2"><h2>
+Периодическое включение/выключение
+<script>
+document.write('(Канал '+(selected_channel+1)+')');
+</script>
+</h2></td></tr>
+<tr>
+<td class="hmspar">Период повторения</td>
+<td class="hms">
+<input name="cycle_time_h" maxlength="4" size="4"/> час
+<input name="cycle_time_m" maxlength="4" size="4"/> мин
+<input name="cycle_time_s" maxlength="4" size="4"/> cек
+</td>
+</tr>
+<tr>
+<td class="hmspar">Длительность активного состояния</td>
+<td class="hms">
+<input name="active_time_h" maxlength="4" size="4"/> час
+<input name="active_time_m" maxlength="4" size="4"/> мин
+<input name="active_time_s" maxlength="4" size="4"/> cек
+</td>
+</tr>
+<tr>
+<td class="hmspar">Активное состояние</td>
+<td class="hms">
+<input name="active_state_is_on" type="radio" value="1"/>Вкл
+<input name="active_state_is_on" type="radio" value="0"/>Выкл
+</td>
+</tr>
+<tr>
+<td colspan="2" style="border:none">
+<div class="sendbtn"><input type="button" value="Применить изменения" onclick="check_submit_frm()"></div>
+</td>
+</tr>
+</table>
+
+<script>
+function set_hms(name, val)
+{
+ var h,m,s;
+ s=val%60; val-=s;val/=60;
+ m=val%60; val-=m;val/=60;
+ h=val%60;
+ doc.frm[name+'_s'].value=s; 
+ doc.frm[name+'_m'].value=m; 
+ doc.frm[name+'_h'].value=h;
+}
+with(data[selected_channel])
+{
+ set_hms('cycle_time',cycle_time);
+ set_hms('active_time',active_time);
+ doc.frm.active_state_is_on[flags&4?0:1].checked=true;
+}
+</script>
+
+<h2 style="margin-top:0px">Статус</h2>
+<table>
+<tr>
+<td class="parname">Локальное время в устройстве</td><td id="time" style="text-align:right">&nbsp;</td>
+</tr><tr>
+<td class="parname">Сдвиг локального времени в устройстве</td><td id="timezone"  style="text-align:right">&nbsp;</td>
+</tr><tr>
+<td class="parname">Статус NTP</td><td id="ntpstat" style="text-align:right">&nbsp;</td>
+</tr>
+</table>
+
+<h2>Состояние реле по умолчанию</h2>
+<table>
+<tr>
+<td class="parname">Состояние реле при сбое установки времени</td>
+<td class="parinput">
+<select name="default_mode">
+<option>Постоянно Выкл</option>
+<option>Постоянно Вкл</option>
+<option>Игнорировать сбой</option>
+</select>
+</td>
+</tr>
+</table>
+<div class="send_button_container" style="float:right"><input type="button" value="Применить изменения" onclick="check_submit_frm()"></div>
+<div style="clear:both"></div>
+
+<script>
+i = selected_channel;
+  
+var space3 ='&nbsp;&nbsp;';
+var pval;
+
+l='<h2>Недельное расписание (канал '+(i+1)+')</h2>';
+l+='<table>';
+l+='<tr class="schedule_top_hdrs">';
+l+='<td>&nbsp;</td>';
+for (k=0; k<schedule_points_count/2; ++k) 
+{
+ l+='<td>Вкл</td>';
+ l+='<td>Выкл</td>';
+ l+='<td>'+space3+'</td>';
+}
+l +='<td>Как&nbsp;пред.&nbsp;день&nbsp;нед.</td>';
+l+='</tr>'; 
+for (j=0;j<schedule_day_count;j++)
+{
+  l+='<tr class="centered">';
+  l+='<td class="left_th">'+schedule_day[j]+'</td>';
+  for (k=0; k<schedule_points_count; k++)
+  {
+    pval=data[i].schedule[j][k];
+    l+='<td><input class="hhmm" maxlength="5" name="'+inm('schedule', i, j, k)+'" value="'+ write_schedule_point(pval) +'" onchange="change_point(this,'+j+','+k+')"/></td>';
+    if(k&1) l+='<td>'+space3+'</td>';
+  }
+  l+='<td width="33%">';
+  if (j>=1 && j<=6) 
+  {
+   l+='<input type="checkbox" name="'+inm('same_as_prev', i, j)+'" '+ 
+    (data[i].same_as_prev_day&(1<<j)?'checked=""':'')+'" onclick="prev()"/>';
+  }
+  else
+   l+='&nbsp';
+  l+='</td></tr>';
+}
+l+='</table>';
+l+='<div style="float:left" class="send_button_container label">Формат времени: чч:мм</div>';
+l+='<div style="float:right" class="send_button_container"><input type="button" value="Применить изменения" onclick="check_submit_frm()"></div>';
+l+='<div style="clear:both"></div>';
+document.write(l);
+
+l='<h2>Подмена праздников</h2>';
+l+='<table class="hol">';
+l+='<tr><td style="text-align:left;width:50%">Дата</td>'
+for (j=0;j<holidays_n;j++)
+  l+='<td><input maxlength="5" name="'+inm('holiday_date',i,j)+
+  '" value="'+write_holiday_date(hol_day[j],hol_month[j])+
+  '" style="text-align:center" onchange="change_holiday_date(this,'+j+')"/></td>';
+l+='</tr>';
+l+='<tr><td style="text-align:left;width:50%">Подмена</td>'
+for (j=0;j<holidays_n;j++)
+{
+ l+='<td><select onchange="hol_replacement['+j+']=this.selectedIndex">';
+ for (k=0;k<schedule_day_count;k++)
+ {
+  l+='<option '+write_selected(k,hol_replacement[j])+'>';
+  l+=schedule_day[k];
+  l+='</option>';
+ }
+ l+='</select></td>';
+}
+l+='</tr></table>';
+l+='<div style="float:left" class="send_button_container label">Формат даты: дд.мм</div>';
+l+='<div style="float:right" class="send_button_container"><input type="button" value="Применить изменения" onclick="check_submit_frm()"></div>';
+l+='<div style="clear:both"></div>';
+document.write(l);
+prev();
+
+var defmode=(data[selected_channel].flags&4)?1:0;//18.08.2014
+if(data[selected_channel].flags&16) defmode=2;
+document.frm.default_mode.selectedIndex=defmode;
+</script>
+</form>
+
+<form name="sender" style="display:none" method="post" action="">
+<input type="hidden" name="data" />
+</form>
+
+</div>
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

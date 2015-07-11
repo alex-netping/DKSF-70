@@ -1,0 +1,35 @@
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+</head>
+<body>
+<script>
+function getid(a) { return document.getElementById(a); }
+
+function hexb(b) {if(b<0) b=0; if(b>255) b=255; return (b<16?'0':'')+b.toString(16);}
+
+function send()
+{
+  var s = frm.cmd.value;
+  var d='';
+  for(var n=0;n<s.length;++n) d+=hexb(s.charCodeAt(n));
+  d+='0D';
+  while(d.length < 16*2) d+='00';
+  sender.data.value=d;
+  sender.submit();
+}
+
+</script>
+
+<form name="frm">
+<input name="cmd"/>
+<input type="button" value="Send" onclick="send()"/>
+</form>
+<a href="/atget.cgi">Get result</a>
+<form name="sender" style="display:none" method="post" action="at.cgi">
+<input type="hidden" name="data" />
+</form>
+
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

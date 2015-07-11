@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Web-interface</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="relhum_get.cgi"></script>
+<style>
+form {max-width:900px;}
+input[type="text"],input[type="button"] {width:180px;}
+caption {caption-side:bottom;}
+.edtdiv {
+position: absolute;
+z-index:100;
+border: solid 1px green;
+background-color: white;
+padding:25px;
+left:100;
+top:100;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;
+}
+#edt td,th {text-align:center;}
+#edt td {min-width:80px;}
+#ediv h2 {margin-top:0px;}
+</style>
+</head>
+<body>
+<script>
+/*
+///DEBUGG
+var devname='NetPing Test';
+data={ow_addr:'285f 72e5 0000 0032', rh_value:50,t_value:26,status:0, rh_high:80, rh_low:20, flags:3};
+///
+*/
+menu('Relative Humidity Sensor');
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   x=x.replace(/\"/g,''); // 22.03.2011, remove quotes  
+   l=x.length; if(l>f.len-1) l=f.len-1;
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function showerr(fld)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+ if(e) throw fld;
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function chk_ow_addr(f)
+{
+ if(f.value=="" || f.value.match(/^\s*$/)) return [0,0,0,0,0,0,0,0];
+ var a=f.value.match(/[0-9a-f]{2}/ig);
+ seterr(f, (!a) || (!a.length) || (a.length != 8));
+ for(var i in a) a[i]=parseInt(a[i],16);
+ return a;
+}
+
+function chkfrm() 
+{
+ var d={},f=document.frm;
+ d.ow_addr=f.ow_addr?chk_ow_addr(f.ow_addr):[0,0,0,0,0,0,0,0];
+ d.rh_high=range(f.rh_high,0,100);
+ d.rh_low=range(f.rh_low,0,100);
+ if(d.rh_high-d.rh_low<4) 
+ {  
+  seterr(f.rh_high,true);
+  seterr(f.rh_low,true);
+  alert('Top margin of Safe range must be above low margin for minimum 4 % points!');
+  throw(0);
+ }
+ d.flags=data.flags; // pass as is
+ sender.data.value=pack(packfmt,d);;
+ sender.submit();
+ return false;
+}
+
+var req=new XMLHttpRequest();
+var reqtimer;
+var watchtimer;
+
+function no_responce()
+{
+ clearInterval(watchtimer);
+ req.abort();
+ getid('error').style.visibility="visible";
+}
+
+function responce()
+{
+ var d,i,err=getid('error').style;
+ clearTimeout(reqtimer);
+ clearInterval(watchtimer);
+ d=req.responseText;
+ if(req.status!=200 || !d || d=='') { err.visibility="visible"; return; }
+ err.visibility="hidden";
+ d=eval(d);
+ getid('status').innerHTML=['Sensor failed','Below Safe Range','In Safe Range','Above Safe Range'][d.rh_status_h];
+ getid('rh_value').innerHTML=d.rh_value+'&nbsp;%';
+ getid('t_value').innerHTML=((d.t_value_100/100.0).toFixed(1))+'&deg;C';
+ var dp;
+ if(d.status==1) dp='-';
+ else
+ {
+ dp=dewpoint(d.t_value,d.rh_value/100.0);
+ if((!isNaN(dp)) && dp > -100 && dp < 100)
+   dp=Math.round(dp)+'&deg;C';
+ else
+   dp='-';
+ }
+ getid('t_dew').innerHTML=dp;
+}
+
+function watch() {if(req.readyState==4) responce();}
+
+function monitor()
+{
+ req.abort();
+ req.open("GET","/rh_stat_get.cgi",true);
+ req.send(null);
+ reqtimer=setTimeout(no_responce,5990);
+ watchtimer=setInterval(watch,200);
+}
+
+function dewpoint(t,rh)
+{ // http://www.paroscientific.com/dewpoint.htm
+ var a=17.27; var b=237.7;
+ var alf = a*t/(b+t)+Math.log(rh); 
+ return b*alf/(a-alf);
+}
+
+</script>
+
+<div id="middle">
+<div id="push_margin" style="height:1px"></div>
+<form name="frm" id="idfrm" method="post" action="error.html">
+<table id="table">
+<caption class="send_button_container">
+<div id="error" class="alert" style="float:left;visibility:hidden;">No communication with the device! Data is outdated!</div>
+<div style="float:right"><input type="button" value="Apply changes" onclick="chkfrm()"/></div>
+<div style="clear:both"></div>
+</caption>
+<tr>
+<td class="parname">Unique Id of 1W Sensor</td>
+<td class="parinput"><input type="text" name="ow_addr" /></td>
+</tr>
+<tr>
+<td class="parname">Sensor Status</td>
+<td id="status" class="parinput">&nbsp;</td>
+</tr>
+<tr>
+<td class="parname">Relative Humidity</td>
+<td id="rh_value" class="parinput">&nbsp;</td>
+</tr>
+<tr>
+<td class="parname">Temperature</td>
+<td id="t_value" class="parinput">&nbsp;</td>
+</tr>
+<tr>
+<td class="parname">Dew Point (calculated)</td>
+<td id="t_dew" class="parinput">&nbsp;</td>
+</tr>
+<tr>
+<td class="parname">Top Margin of Humidity Safe Range</td>
+<td name="high" class="parinput"><input type="text" name="rh_high" /></td>
+</tr>
+<tr>
+<td class="parname">Bottom Margin of Humidity Safe Range</td>
+<td name="high" class="parinput"><input type="text" name="rh_low" /></td>
+</tr>
+<tr>
+<td class="parname">Notification on Sensor Status change</td>
+<td class="parinput"><input type="button" name="notif_butt" value="Setup" onclick="edit_notif()"/></td>
+</tr>
+</table>
+</form>
+
+<form name="sender" style="display:none" method="post" action="relhum_set.cgi">
+<input type="hidden" name="data"/>
+</form>
+
+<script>
+if(typeof document.frm.ow_addr != 'undefined') 
+ document.frm.ow_addr.value=data.ow_addr;
+document.frm.rh_high.value=data.rh_high;
+document.frm.rh_low.value=data.rh_low;
+monitor();
+setInterval(monitor,10000);
+</script>
+
+<script>
+function set_nf_cb(ev,msk)
+{
+ f=document.notif_frm;
+ f['nf_log'+ev].checked=msk&1;
+ f['nf_syslog'+ev].checked=msk&2;
+ f['nf_email'+ev].checked=msk&4;
+ f['nf_sms'+ev].checked=msk&8;
+ f['nf_trap'+ev].checked=msk&16; 
+}
+
+function get_nf_cb_hex(ev)
+{
+ f=document.notif_frm;
+ msk=0;
+ if(f['nf_log'+ev].checked) msk|=1;
+ if(f['nf_syslog'+ev].checked) msk|=2;
+ if(f['nf_email'+ev].checked) msk|=4;
+ if(f['nf_sms'+ev].checked) msk|=8;
+ if(f['nf_trap'+ev].checked) msk|=16;
+ return hexb(msk,2);
+}
+
+function edit_notif()
+{
+ if(getid('ediv').style.visibility=='visible') return;
+ var rq=new XMLHttpRequest();
+ rq.open("GET","/notify_get.cgi?nfid=0300",false);//rel.hum.
+ rq.send(null);
+ var d=rq.responseText;
+ if(rq.readyState!=4 || rq.status!=200 || d=='error' || d=='') return;
+ d=eval(d);
+ set_nf_cb('3',d.high);
+ set_nf_cb('2',d.norm);
+ set_nf_cb('1',d.low);
+ set_nf_cb('0',d.fail);
+ set_nf_cb('_r',d.report);
+ x=getid('table').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
+ y=document.frm.notif_butt.getBoundingClientRect().bottom - 120;
+ getid('ediv').style.top=y+'px';
+ getid('ediv').style.left=x+'px'; 
+ getid('ediv').style.visibility='visible';
+}
+
+var svrq=new XMLHttpRequest();
+
+function save_notif(y)
+{
+ var f,msk;
+ if(!y)
+ {
+  getid('ediv').style.visibility='hidden';
+ }
+ else
+ {
+  svrq.abort();
+  var d='data=0300';//rel.hum.
+  d+=get_nf_cb_hex('3');
+  d+=get_nf_cb_hex('2');
+  d+=get_nf_cb_hex('1');
+  d+=get_nf_cb_hex('0');  
+  d+=get_nf_cb_hex('_r');
+  svrq.onreadystatechange = function() 
+  {
+   if(svrq.readyState==4 && svrq.status==200)
+    getid('ediv').style.visibility='hidden';
+  }     
+  svrq.open("POST","/notify_set.cgi",true);
+  svrq.send(d);
+ }
+}
+</script>
+
+<div id="ediv" class="edtdiv">
+<form name="notif_frm">
+<h2>Notifications for relative humidity sensor</h2>
+<table id="edt">
+<caption class="send_button_container">
+<input type="button" style="width:180px" value="Cancel" onclick="save_notif(0)"/>
+<input type="button" style="width:180px" value="Save" onclick="save_notif(1)"/>
+</caption>
+
+<tr>
+<th style="text-align:left">Event</th>
+<th>Log</th>
+<th>Syslog</th>
+<th>E-mail</th>
+<th>SMS</th>
+<th>SNMP Trap</th>
+</tr>
+
+<tr>
+<td style="text-align:left">Humidity is above Safe range</td>
+<td><input type="checkbox" name="nf_log3"/></td>
+<td><input type="checkbox" name="nf_syslog3"/></td>
+<td><input type="checkbox" name="nf_email3"/></td>
+<td><input type="checkbox" name="nf_sms3"/></td>
+<td><input type="checkbox" name="nf_trap3"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Humidity is in Safe range</td>
+<td><input type="checkbox" name="nf_log2"/></td>
+<td><input type="checkbox" name="nf_syslog2"/></td>
+<td><input type="checkbox" name="nf_email2"/></td>
+<td><input type="checkbox" name="nf_sms2"/></td>
+<td><input type="checkbox" name="nf_trap2"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Humidity is below Safe range</td>
+<td><input type="checkbox" name="nf_log1"/></td>
+<td><input type="checkbox" name="nf_syslog1"/></td>
+<td><input type="checkbox" name="nf_email1"/></td>
+<td><input type="checkbox" name="nf_sms1"/></td>
+<td><input type="checkbox" name="nf_trap1"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Sensor fault</td>
+<td><input type="checkbox" name="nf_log0"/></td>
+<td><input type="checkbox" name="nf_syslog0"/></td>
+<td><input type="checkbox" name="nf_email0"/></td>
+<td><input type="checkbox" name="nf_sms0"/></td>
+<td><input type="checkbox" name="nf_trap0"/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Include in Summary Report</td>
+<td><input type="checkbox" name="nf_log_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_syslog_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_email_r"/></td>
+<td><input type="checkbox" name="nf_sms_r"/></td>
+<td><input type="checkbox" name="nf_trap_r" disabled=""/></td>
+</tr>
+
+</table>
+</form> <!--notif_frm-->
+</div><!--ediv-->
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

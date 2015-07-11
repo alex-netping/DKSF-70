@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<style>
+body {min-width:1000px;}
+textarea {width:100%;margin-top:15px;margin-bottom:0px;padding-left:10px;padding-right:10px;}
+#div_reqerror {width:100%;padding-left:12px;margin-top:-35px;margin-bottom:0px;}
+</style>
+</head>
+<body>
+
+<script>
+menu('Журнал');
+
+function getid(a) { return document.getElementById(a); }
+
+var req=new XMLHttpRequest();
+var reqtimeout;
+
+function no_responce()
+{
+ req.abort();
+ var err=getid('reqerror');
+ if(err.style.visibility=="visible") return;
+ with(getid('txt')) { value+='\n\n'; scrollTop=scrollHeight; }
+ err.style.visibility="visible";
+}
+
+function responce()
+{
+ if(req.readyState!=4) return;
+ clearTimeout(reqtimeout);
+ var d=req.responseText;
+ var err=getid('reqerror').style;
+ if(req.status!=200 || !d) { no_responce(); return; }
+ err.visibility="hidden";
+ with(getid('txt')) { value=d; scrollTop=scrollHeight; }
+}
+
+function monitor()
+{
+ req.abort();
+ reqtimeout=setTimeout(no_responce,5990); 
+ req.open("GET","/log.cgi",true);
+ req.onreadystatechange=responce;
+ req.send(null);
+}
+
+setInterval(monitor,20000); 
+</script>
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm" method="post" action="error.html">
+<textarea id="txt" rows="27">
+</textarea>
+<div id="div_reqerror">
+<span id="reqerror" class="alert" style="visibility:hidden">Нет связи с устройством! Данные устарели!</span>
+</div>
+</form>
+
+<script>
+monitor();
+</script>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>
