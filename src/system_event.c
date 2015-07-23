@@ -126,6 +126,20 @@ int snmp_data_handler(unsigned pdu_mode, unsigned short id, unsigned char *p)
   }
 #endif
 
+#ifdef SMOKE_MODULE
+  if((id & 0xff00) == 0x8200)
+  {
+    switch(pdu_mode)
+    {
+    case SNMP_PDU_GET:
+    case SNMP_PDU_GET_NEXT:
+      return smoke_snmp_get();
+    case SNMP_PDU_SET:
+      return smoke_snmp_set();
+    }
+  }
+#endif
+
   return SNMP_ERR_NO_SUCH_NAME;
 }
 
@@ -166,6 +180,7 @@ void init_modules(void)
   sms_init();
 #endif
   curdet_init();
+  smoke_init();
   setter_init();
   logic_init();
   ow_init();
@@ -203,6 +218,7 @@ void system_event(enum event_e event, unsigned evdata)
   sms_event(event);
 #endif
   curdet_event(event);
+  smoke_event(event);
   logic_event(event);
   setter_event(event);
   ow_event(event);

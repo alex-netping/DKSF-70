@@ -33,13 +33,16 @@ oid_list = [
 (0x8350, '.1.3.6.1.4.1.25728.8300.1.1.5.table.1'),	## SNMP_HANDLERx	R	LP_R	8	Ru: En: 
 (0x8370, '.1.3.6.1.4.1.25728.8300.1.1.7.table.1'),	## SNMP_HANDLERx	RW	LP_POWER	8	Ru: En: 
 
-(0x8420, '.1.3.6.1.4.1.25728.8400.2.2.0'),	## RO npRelHumSensorValueH INTEGER(0..100)
-(0x8430, '.1.3.6.1.4.1.25728.8400.2.3.0'),	## RO npRelHumSensorStatus INTEGER(0..1)
-(0x8440, '.1.3.6.1.4.1.25728.8400.2.4.0'),	## RO npRelHumSensorValueT INTEGER(-60..200)
-(0x8450, '.1.3.6.1.4.1.25728.8400.2.5.0'),	## RO npRelHumSensorStatusH INTEGER(0..3),
-(0x8470, '.1.3.6.1.4.1.25728.8400.2.7.0'),	## RO npRelHumSafeRangeHigh INTEGER(0..100),
-(0x8480, '.1.3.6.1.4.1.25728.8400.2.8.0'),	## RO npRelHumSafeRangeLow INTEGER(0..100),
-(0x8490, '.1.3.6.1.4.1.25728.8400.2.9.0'),	## RO npRelHumSensorValueT100 INTEGER32,
+(0x8410, '.1.3.6.1.4.1.25728.8400.1.1.1.table.4'),	## RO npRelHumN INTEGER
+(0x8420, '.1.3.6.1.4.1.25728.8400.1.1.2.table.4'),	## RO npRelHumValue INTEGER
+(0x8430, '.1.3.6.1.4.1.25728.8400.1.1.3.table.4'),	## RO npRelHumStatus INTEGER
+(0x8440, '.1.3.6.1.4.1.25728.8400.1.1.4.table.4'),	## RO npRelHumTempValue INTEGER
+(0x8450, '.1.3.6.1.4.1.25728.8400.1.1.5.table.4'),	## RO npRelHumTempStatus INTEGER
+(0x8460, '.1.3.6.1.4.1.25728.8400.1.1.6.table.4'),	## RO npRelHumMemo OCTET STRING
+(0x8470, '.1.3.6.1.4.1.25728.8400.1.1.7.table.4'),	## RO npRelHumSafeRangeHigh INTEGER(0..100)
+(0x8480, '.1.3.6.1.4.1.25728.8400.1.1.8.table.4'),	## RO npRelHumSafeRangeLow INTEGER(0..100)
+(0x8490, '.1.3.6.1.4.1.25728.8400.1.1.9.table.4'),	## RO npRelHumTempSafeRangeHigh INTEGER
+(0x84a0, '.1.3.6.1.4.1.25728.8400.1.1.10.table.4'),	## RO npRelHumTempSafeRangeLow INTEGER
 
 (0x5501, '.1.3.6.1.4.1.25728.5500.5.1.1.table.1'),  ## npRelayN          RO INTEGER
 (0x5502, '.1.3.6.1.4.1.25728.5500.5.1.2.table.1'),  ## npRelayMode       RW INTEGER
@@ -51,6 +54,12 @@ oid_list = [
 (0x7901, '.1.3.6.1.4.1.25728.7900.1.1.0'), ## RW IrCommand
 (0x7902, '.1.3.6.1.4.1.25728.7900.1.2.0'), ## RW IrReset
 (0x7903, '.1.3.6.1.4.1.25728.7900.1.3.0'), ## RW IrStatus
+
+(0x8201, '.1.3.6.1.4.1.25728.8200.1.1.1.table.4'), ## npSmokeSensorN RO INTEGER
+(0x8202, '.1.3.6.1.4.1.25728.8200.1.1.2.table.4'), ## npSmokeStatus  RO INTEGER
+(0x8203, '.1.3.6.1.4.1.25728.8200.1.1.3.table.4'), ## npSmokePower   RW INTEGER
+(0x8204, '.1.3.6.1.4.1.25728.8200.1.1.4.table.4'), ## npSmokeReset   RW INTEGER
+(0x8206, '.1.3.6.1.4.1.25728.8200.1.1.6.table.4'), ## npSmokeMemo    RO DisplayString
     
 (0x8810, '.1.3.6.1.4.1.25728.8800.1.1.1.table.8'),	## SNMP_HANDLER5	R	TERMO_CHANNEL	8	Ru: En: 
 (0x8820, '.1.3.6.1.4.1.25728.8800.1.1.2.table.8'),	## SNMP_HANDLER5	R	TERMO_VALUE	8	Ru: En: 

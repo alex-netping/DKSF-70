@@ -95,8 +95,8 @@ function pack(fmt, data) {
   switch(typeof x) 
   {
   case 'string':
-   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes
-   l=x.length; if(l>f.len-1) l=f.len-1;
+   x=x.replace(/\"/g,'');
+   l=x.length; if(l>f.len-2) l=f.len-2;
    d[f.offs]=hexb(l);
    for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
    break;

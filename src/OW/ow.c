@@ -13,6 +13,11 @@ v2.2-54
 v2.3-70
 26.11.2014
   rh_real_t_100 also set to 0 in case of RH sensor faill
+v2.4-48
+  1w smoke support, common Convert T command
+v2.5-70
+14.07.2015
+  multi 1w rh support, powermon support, rewtite of T
 */
 
 #include "platform_setup.h"
@@ -38,8 +43,8 @@ match 3 - restart / 70us
 unsigned ow_idx;
 unsigned ow_tx_len;
 unsigned ow_rx_len;
-unsigned char ow_tx_buf[16];
-unsigned char ow_rx_buf[10];
+unsigned char ow_tx_buf[64];
+unsigned char ow_rx_buf[64];
 unsigned char ow_direction;
 unsigned char ow_reset_pulse;
 volatile unsigned char ow_completed;
@@ -51,24 +56,46 @@ unsigned short ow_repeat;
 unsigned char ow_read_rom_buf[8];
 systime_t     ow_timeout = ~0ULL;
 
+short         ow_smoke_ch;
+char          ow_smoke_data;
+
+short         ow_rh_ch;
+
 enum ow_thermo_state_e {
   OW_START,
   OW_READ_ROM,
   OW_READ_ROM_CHK,
-  OW_RH_INIT,
-  OW_RH_SAVE,
-  OW_RH_CONV_T,
+  OW_COMMON_CONV_T,
+  OW_RH_START,
+  OW_RH_NEXT,
   OW_RH_CONV_V,
   OW_RH_RECALL,
   OW_RH_READ,
   OW_RH_CHECK,
   OW_RH_DONE,
+  OW_SMOKE_START,
+  OW_SMOKE_NEXT,
+  OW_SMOKE_REPEAT,
+  OW_SMOKE_CONTINUE,
+  OW_SMOKE_CHECK,
+  OW_SMOKE_DONE,
+  OW_PMON_START,
+  OW_PMON_NEXT,
+  OW_PMON_WRITE,
+  OW_PMON_WRITE_CHK,
+  OW_PMON_RESTART,
+  OW_PMON_RESTART_CHK,
+  OW_PMON_READ_SETUP,
+  OW_PMON_READ_SETUP_CHK,
+  OW_PMON_READ_FULL,
+  OW_PMON_READ_FULL_CHK,
+  OW_PMON_READ_SHORT,
+  OW_PMON_READ_SHORT_CHK,
+  OW_PMON_DONE,
   OWT_START,
-  OWT_CONVERT,
-  OWT_CONV_CHK,
+  OWT_NEXT,
   OWT_READ,
-  OWT_READ_CHK,
-  OWT_NEXT
+  OWT_READ_CHK
 } ow_state;
 
 void ow_pin_init(void)
@@ -221,12 +248,60 @@ const unsigned char crc8_table[256] = {
   116, 42,200,150, 21, 75,169,247,182,232, 10, 84,215,137,107, 53
 };
 
+ const unsigned short crc16_table[256] = {
+          0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
+          0xC601, 0x06C0, 0x0780, 0xC741, 0x0500, 0xC5C1, 0xC481, 0x0440,
+          0xCC01, 0x0CC0, 0x0D80, 0xCD41, 0x0F00, 0xCFC1, 0xCE81, 0x0E40,
+          0x0A00, 0xCAC1, 0xCB81, 0x0B40, 0xC901, 0x09C0, 0x0880, 0xC841,
+          0xD801, 0x18C0, 0x1980, 0xD941, 0x1B00, 0xDBC1, 0xDA81, 0x1A40,
+          0x1E00, 0xDEC1, 0xDF81, 0x1F40, 0xDD01, 0x1DC0, 0x1C80, 0xDC41,
+          0x1400, 0xD4C1, 0xD581, 0x1540, 0xD701, 0x17C0, 0x1680, 0xD641,
+          0xD201, 0x12C0, 0x1380, 0xD341, 0x1100, 0xD1C1, 0xD081, 0x1040,
+          0xF001, 0x30C0, 0x3180, 0xF141, 0x3300, 0xF3C1, 0xF281, 0x3240,
+          0x3600, 0xF6C1, 0xF781, 0x3740, 0xF501, 0x35C0, 0x3480, 0xF441,
+          0x3C00, 0xFCC1, 0xFD81, 0x3D40, 0xFF01, 0x3FC0, 0x3E80, 0xFE41,
+          0xFA01, 0x3AC0, 0x3B80, 0xFB41, 0x3900, 0xF9C1, 0xF881, 0x3840,
+          0x2800, 0xE8C1, 0xE981, 0x2940, 0xEB01, 0x2BC0, 0x2A80, 0xEA41,
+          0xEE01, 0x2EC0, 0x2F80, 0xEF41, 0x2D00, 0xEDC1, 0xEC81, 0x2C40,
+          0xE401, 0x24C0, 0x2580, 0xE541, 0x2700, 0xE7C1, 0xE681, 0x2640,
+          0x2200, 0xE2C1, 0xE381, 0x2340, 0xE101, 0x21C0, 0x2080, 0xE041,
+          0xA001, 0x60C0, 0x6180, 0xA141, 0x6300, 0xA3C1, 0xA281, 0x6240,
+          0x6600, 0xA6C1, 0xA781, 0x6740, 0xA501, 0x65C0, 0x6480, 0xA441,
+          0x6C00, 0xACC1, 0xAD81, 0x6D40, 0xAF01, 0x6FC0, 0x6E80, 0xAE41,
+          0xAA01, 0x6AC0, 0x6B80, 0xAB41, 0x6900, 0xA9C1, 0xA881, 0x6840,
+          0x7800, 0xB8C1, 0xB981, 0x7940, 0xBB01, 0x7BC0, 0x7A80, 0xBA41,
+          0xBE01, 0x7EC0, 0x7F80, 0xBF41, 0x7D00, 0xBDC1, 0xBC81, 0x7C40,
+          0xB401, 0x74C0, 0x7580, 0xB541, 0x7700, 0xB7C1, 0xB681, 0x7640,
+          0x7200, 0xB2C1, 0xB381, 0x7340, 0xB101, 0x71C0, 0x7080, 0xB041,
+          0x5000, 0x90C1, 0x9181, 0x5140, 0x9301, 0x53C0, 0x5280, 0x9241,
+          0x9601, 0x56C0, 0x5780, 0x9741, 0x5500, 0x95C1, 0x9481, 0x5440,
+          0x9C01, 0x5CC0, 0x5D80, 0x9D41, 0x5F00, 0x9FC1, 0x9E81, 0x5E40,
+          0x5A00, 0x9AC1, 0x9B81, 0x5B40, 0x9901, 0x59C0, 0x5880, 0x9841,
+          0x8801, 0x48C0, 0x4980, 0x8941, 0x4B00, 0x8BC1, 0x8A81, 0x4A40,
+          0x4E00, 0x8EC1, 0x8F81, 0x4F40, 0x8D01, 0x4DC0, 0x4C80, 0x8C41,
+          0x4400, 0x84C1, 0x8581, 0x4540, 0x8701, 0x47C0, 0x4680, 0x8641,
+          0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040
+ };
+
 char ow_crc(void *buf, unsigned len)
 {
   unsigned char crc = 0;
   unsigned char *p = buf;
   while(len--)
     crc = crc8_table[crc ^ *p++];
+  return crc;
+}
+
+static inline unsigned short crc16_byte(unsigned short crc, const char data)
+{
+  return (crc >> 8) ^ crc16_table[(crc ^ data) & 0xff];
+}
+
+unsigned short ow_crc16(unsigned short crc, void *buf, unsigned len)
+{
+  char *p = buf;
+  while(len--)
+    crc = crc16_byte(crc, *p++);
   return crc;
 }
 
@@ -462,35 +537,15 @@ void ow_start(unsigned tx_len, unsigned rx_len)
   ow_timeout = sys_clock() + 50; // 25->50 24.01.2012
 }
 
-/*
-если появляется новый датчик между оцифровкой и считыванием,
-система сбойнёт, может прочитаться неоцифрованный датчик
-- сделать маску оцифрованных датчиков?
-- возможен ли контроль срабатывания 0x55 ConvT?
-
-= ow перезапускается при каждом сохранении любого ow_addr
-*/
-
-int ow_next(void)
+void ow_continue(unsigned tx_len, unsigned rx_len) // transaction w/o start pulse, only possible after ow_start() transaction
 {
-  int more_flag = 1;
-  int i;
-  for(i=0; i<TERMO_N_CH; ++i)
-  {
-    if(++ow_ch == TERMO_N_CH)
-    {
-      ow_ch = 0; // loop scan
-      more_flag = 0; // scan pass completed
-    }
-    if(termo_setup[ow_ch].ow_addr[0] == 0x28) // DS18B20
-      break; // next ow t sensor found
-  }
-  if(i == TERMO_N_CH)
-  { // no one ow sensor was found
-    ow_ch = -1; // no ow sensors in system
-    return 0; // no next sensor
-  }
-  return more_flag;
+  ow_disable_and_clear_uart(); // 23.01.2014 ensure uart disabled before touching buffer index
+  ow_tx_len = tx_len;
+  ow_rx_len = rx_len;
+  ow_direction = tx_len ? 1 : 0;
+  ow_idx = ow_error = ow_completed = 0;
+  ow_octet(); // start tx/rx
+  ow_timeout = sys_clock() + 50;
 }
 
 void ow_exec(void)
@@ -507,7 +562,6 @@ void ow_exec(void)
 void ow_restart(void)
 {
   ow_ch = -1;
-  ow_next(); // select first ow t channel, or still ch = -1
   ow_disable_and_clear_uart();
   ow_completed = 1;
   ow_error = 0;
@@ -518,7 +572,7 @@ void ow_restart(void)
 }
 
 void ow_init(void) // ATTN call *after* termo_init()! if no, ow_ch == -1 and dont works
-{
+{	
   ow_init_pin(); //17.06.2014
 
   PCONP_bit.PCUART3 = 1;
@@ -529,14 +583,14 @@ void ow_init(void) // ATTN call *after* termo_init()! if no, ow_ch == -1 and don
   U3IER = 1<<0 | 1<<2; // rx interr, rx error interr
   nvic_set_pri(U3_IRQ, 16);
   nvic_enable_irq(U3_IRQ);
-
   ow_restart();
 }
 
 void ow_scan(void)
 {
-  if(sys_clock_100ms < ow_scan_time) return;
   if(ow_completed == 0) return;
+  if(sys_clock_100ms < ow_scan_time) return;
+  ow_scan_time = 0; // next op delay will be 0 by default
   switch(ow_state)
   {
   case OW_START:
@@ -551,45 +605,45 @@ void ow_scan(void)
     else
       memset(ow_read_rom_buf, 0, sizeof ow_read_rom_buf);
     // проваливаемся
-  case OW_RH_INIT:
-    ow_repeat = 0;
-    if(relhum_setup.ow_addr[0] == 0)
+  case OW_COMMON_CONV_T:
+    ow_tx_buf[0] = 0xCC; // Skip ROM
+    ow_tx_buf[1] = 0x44; // Convert T
+    ow_start(2, 0);
+    ow_scan_time = sys_clock_100ms + 8; // 800ms
+    ow_state = OW_RH_START;
+    break;
+  case OW_RH_START: // ATTN! 1W transaction is continued on the next ow_state step w/o new match ROM!
+    ow_rh_ch = -1;
+    ow_state = OW_RH_NEXT;
+    // проваливаемся
+  case OW_RH_NEXT:
+    if(++ow_rh_ch == RELHUM_MAX_CH)
     {
-      rh_status = RH_STATUS_FAILED;
-      rh_real_t_100 = rh_real_t = rh_real_h = 0;
+      ow_rh_ch = -1;
       ow_state = OW_RH_DONE;
+      break;
     }
-    else
+    if(relhum_setup[ow_rh_ch].ow_addr[0] == 0)
     {
-      ow_tx_buf[0] = 0x55; // match ROM
-      memcpy(ow_tx_buf + 1, relhum_setup.ow_addr, 8);
-      ow_tx_buf[9] = 0x4E; // Write scratchpad
-      ow_tx_buf[10] = 0; // Page 0
-      ow_tx_buf[11] = 0; // offset 0, Config - disable charge integrator, switch ADC to AD input
-      ow_start(12,0); // write partial page (only 1 byte)
-      ow_state = OW_RH_CONV_T; // skipping saving to sensor's EEPROM, it works good from RAM page
+      relhum_state[ow_rh_ch].rh = 0;
+      relhum_state[ow_rh_ch].t = 0;
+      relhum_state[ow_rh_ch].error = 1;
+      rh_check_status(ow_rh_ch);
+      break;
     }
-    break;
-  case OW_RH_SAVE:
+    ow_repeat = 0;
+    // configure sensor's 1w chip
     ow_tx_buf[0] = 0x55; // match ROM
-    memcpy(ow_tx_buf + 1, relhum_setup.ow_addr, 8);
-    ow_tx_buf[9] = 0x48; // Save page
+    memcpy(ow_tx_buf + 1, relhum_setup[ow_rh_ch].ow_addr, 8);
+    ow_tx_buf[9] = 0x4E; // Write scratchpad
     ow_tx_buf[10] = 0; // Page 0
-    ow_start(11, 0);
-    ow_scan_time = sys_clock_100ms + 2; // 18.10.2014 EEPROM prog time
-    ow_state = OW_RH_CONV_T;
-    break;
-  case OW_RH_CONV_T:
-    ow_tx_buf[0] = 0x55; // match ROM
-    memcpy(ow_tx_buf + 1, relhum_setup.ow_addr, 8);
-    ow_tx_buf[9] = 0x44; // conv T
-    ow_start(10,0);
-    ow_scan_time = sys_clock_100ms + 2;
-    ow_state = OW_RH_CONV_V;
+    ow_tx_buf[11] = 0; // offset 0, Config - disable charge integrator, switch ADC to AD input
+    ow_start(12,0); // write partial page (only 1 byte)
+    ow_state = OW_RH_CONV_V; // skipping saving to sensor's EEPROM, it works good from RAM page
     break;
   case OW_RH_CONV_V:
     ow_tx_buf[0] = 0x55; // match ROM
-    memcpy(ow_tx_buf + 1, relhum_setup.ow_addr, 8);
+    memcpy(ow_tx_buf + 1, relhum_setup[ow_rh_ch].ow_addr, 8);
     ow_tx_buf[9] = 0xB4; // conv V
     ow_start(10,0);
     ow_repeat = 0;
@@ -598,7 +652,7 @@ void ow_scan(void)
     break;
   case OW_RH_RECALL:
     ow_tx_buf[0] = 0x55; // match ROM
-    memcpy(ow_tx_buf + 1, relhum_setup.ow_addr, 8);
+    memcpy(ow_tx_buf + 1, relhum_setup[ow_rh_ch].ow_addr, 8);
     ow_tx_buf[9] = 0xB8; // Recall to SP
     ow_tx_buf[10] = 0; // Page 0
     ow_start(11, 0);
@@ -606,11 +660,10 @@ void ow_scan(void)
     break;
   case OW_RH_READ:
     ow_tx_buf[0] = 0x55; // match ROM
-    memcpy(ow_tx_buf + 1, relhum_setup.ow_addr, 8);
+    memcpy(ow_tx_buf + 1, relhum_setup[ow_rh_ch].ow_addr, 8);
     ow_tx_buf[9] = 0xBE; // Read scratchpad
     ow_tx_buf[10] = 0; // Page 0;
     ow_start(11, 9);
-    /// ow_scan_time = sys_clock_100ms + 2; // 18.10.2014 - what this for?
     ow_state = OW_RH_CHECK;
     break;
   case OW_RH_CHECK:
@@ -620,20 +673,21 @@ void ow_scan(void)
     if(ow_error == 0)
     {
       double h;
-      int raw_h;
+      int raw_h, int_h, t;
       ow_repeat = 0;
-      rh_real_t = ow_rx_buf[2];
-      if(ow_rx_buf[1] & 0x80) ++rh_real_t; // rounding
-      // rh_real_t_100 = (int)ceil((ow_rx_buf[2]<<8 | ow_rx_buf[0]) * (100.0/256.0)); // wrong? conv to signed!
-      rh_real_t_100 = ((int)(ow_rx_buf[2]<<8 | ow_rx_buf[1]) * 25600) >> 16;  // fixed 8.8 first *(2^8) to be fxp 16.16, then *100, then drop (2^16) frac part; checked for 384 (1.5C) -> 150.
+      t = ow_rx_buf[2]; // from OW_COMMON_CONV_T
+      if(ow_rx_buf[1] & 0x80) ++t; // rounding
+      // rh_real_t_100 = ((int)(ow_rx_buf[2]<<8 | ow_rx_buf[1]) * 25600) >> 16;  // fixed 8.8 first *(2^8) to be fxp 16.16, then *100, then drop (2^16) frac part; checked for 384 (1.5C) -> 150.
       raw_h = ow_rx_buf[4] << 8 | ow_rx_buf[3];
       h = ((double)raw_h / 500.0 - 0.16) / 0.0062; // 500.0 for 5.00V Vdd
-      h = h / (1.0546 - 0.00216*(double)rh_real_t);
-      rh_real_h = (int)ceil(h);
-      if(rh_real_h < 0) rh_real_h = 0;
-      if(rh_real_h > 100) rh_real_h = 100;
-      rh_status = RH_STATUS_OK; // comm status
-      ow_state = OW_RH_DONE;
+      h = h / (1.0546 - 0.00216*(double)t);
+      int_h = (int)ceil(h);
+      if(int_h < 0) int_h = 0;
+      if(int_h > 100) int_h = 100;
+      relhum_state[ow_rh_ch].rh = int_h;
+      relhum_state[ow_rh_ch].t = t;
+      relhum_state[ow_rh_ch].error = 0;
+      ow_state = OW_RH_NEXT;
     }
     else
     {
@@ -644,88 +698,274 @@ void ow_scan(void)
       }
       else
       { // unrecoverable error
-        rh_status = RH_STATUS_FAILED;
-        rh_real_t_100 = rh_real_t = rh_real_h = 0;
-        ow_state = OW_RH_DONE;
+        relhum_state[ow_rh_ch].rh = 0;
+        relhum_state[ow_rh_ch].t = 0;
+        relhum_state[ow_rh_ch].error = 1;
+        ow_state = OW_RH_NEXT;
       }
     }
-    rh_check_status();
+    rh_check_status(ow_rh_ch);
     break;
   case OW_RH_DONE:
-    if(relhum_setup.ow_addr[0] != 0)
-    { // translate T data of RH to termo channel
-      for(int t_ch=0; t_ch<TERMO_N_CH; ++t_ch)
-      {
-        if(memcmp(termo_setup[t_ch].ow_addr, relhum_setup.ow_addr, 8) == 0)
-        {
-          if(rh_status == RH_STATUS_FAILED)
-          {
-            termo_state[t_ch].status = 0;
-            termo_state[t_ch].value = 0;
-          }
-          else
-          {
-            termo_state[t_ch].value = rh_real_t;
-            check_termo_status(t_ch);
-          }
-        } // ow_addr match
-      } // for
-    } // if rh ow_addr present
-    ow_state = OWT_START;
+  case OW_SMOKE_START: // ATTN! 1W transaction is continued on the next ow_state step w/o new match ROM!
+    ow_smoke_ch = -1;
+    ow_state = OW_SMOKE_NEXT;	
+    // проваливаемся
+  case OW_SMOKE_NEXT:
+    if(++ow_smoke_ch == SMOKE_MAX_CH)
+    {
+      ow_smoke_ch = -1;
+      ow_state = OW_SMOKE_DONE;
+      break;
+    }
+    if(smoke_setup[ow_smoke_ch].ow_addr[0] == 0)
+    {
+      smoke_status[ow_smoke_ch] = SMOKE_STATUS_FAILED;
+      break;
+    }
+    ow_repeat = 0;
+    // проваливаемся
+  case OW_SMOKE_REPEAT:
+    ow_tx_buf[0] = 0x55; // match ROM
+    memcpy(ow_tx_buf + 1, smoke_setup[ow_smoke_ch].ow_addr, 8);
+    ow_tx_buf[9] = 0xF5; // Channel Access
+    ow_tx_buf[10] = 3<<2|1<<0; // CA 1st byte; AB=3 (both ch); ALR,IC=0;CRC=1;TOG=0,IM=0 : write 4x(AB),read CRC16 - on the next ow_state step!
+    ow_tx_buf[11] = 0xff; // CA 2nd byte (reserved)
+    crc16 = ow_crc16(0, &ow_tx_buf[9], 3);
+    ow_start(12, 1);
+    ow_state = OW_SMOKE_CONTINUE;
     break;
+  case OW_SMOKE_CONTINUE:
+    ow_smoke_data =  ow_rx_buf[0]; /// !((ow_rx_buf[0] >> 3) & 1);
+    crc16 = ow_crc16(crc16, ow_rx_buf, 1);
+    if( sys_clock_100ms < smoke_reset_time[0]   // reset in progress
+    ||  (smoke_setup[ow_smoke_ch].flags & 1) == 0  ) // loop switched off
+      ow_tx_buf[0] = 0xAA; // ch A (mask 0x55) - output 1(Z)=idle, 0=reset
+    else
+      ow_tx_buf[0] = 0xFF;
+    crc16 = ow_crc16(crc16, ow_tx_buf, 1);
+    ow_continue(1, 2);
+    ow_state = OW_SMOKE_CHECK;
+    break;
+  case OW_SMOKE_CHECK:
+    if(ow_error == 0)
+      if(crc16 != ((~(ow_rx_buf[0] | ow_rx_buf[1]<<8)) & 0xffff) )  // DS CRC16 txed inverted, little endian
+        ow_error = 8;
+    if(ow_error == 0)
+    {
+      if((ow_smoke_data & 1) == (smoke_setup[ow_smoke_ch].flags & 1)) // power has switched according to flag
+      {
+        if(ow_smoke_data & 1) // loop power is on
+          smoke_status[ow_smoke_ch] = ((ow_smoke_data >> 3) & 1) ? SMOKE_STATUS_NORM : SMOKE_STATUS_ALARM ;
+        else
+          smoke_status[ow_smoke_ch] = SMOKE_STATUS_OFF;
+      }
+      ow_state = OW_SMOKE_NEXT;
+    }
+    else
+    { // ow interface error or bad crc
+      if(++ow_repeat < 3)
+      {
+        ow_state = OW_SMOKE_REPEAT;
+      }
+      else
+      {
+        smoke_status[0] = SMOKE_STATUS_FAILED;
+        ow_state = OW_SMOKE_NEXT;
+       }
+    }
+    ow_scan_time = 0;
+    break;
+  case OW_SMOKE_DONE:
+  case OW_PMON_START:	
+    ow_ch = -1;
+    ow_state = OW_PMON_NEXT;
+    // проваливаемся
+  case OW_PMON_NEXT:
+    if(++ow_ch == PWRMON_MAX_CH)
+    {
+      ow_state = OW_PMON_DONE;
+      break;
+    }
+    if(pwrmon_setup[ow_ch].ow_addr[0] == 0)
+      break;
+
+    ow_state = pwrmon_state[ow_ch].refresh ? OW_PMON_READ_SETUP : OW_PMON_READ_SHORT;
+	
+    if(pwrmon_state[ow_ch].write_sensor_setup) ow_state = OW_PMON_WRITE;
+    ow_repeat = 0;
+    break;
+  case OW_PMON_WRITE:
+    ow_tx_buf[0] = 0x55; // match ROM
+    memcpy(ow_tx_buf + 1, pwrmon_setup[ow_ch].ow_addr, 8);
+    ow_tx_buf[9]  = 0x40; // Write mem
+    ow_tx_buf[10] = 0; // Mem Addr
+    ow_tx_buf[11] = 13 * 2; // Data Len
+    memcpy(ow_tx_buf + 12, &pwrmon_state[ow_ch].uv1, 13 * 2);
+    crc16 = ow_crc16(0, ow_tx_buf, 38); // All command from the start
+    ow_tx_buf[38] = ~(crc16 & 0xff);
+    ow_tx_buf[39] = ~(crc16 >> 8); // crc16 transmitted inverted little endian, as required by 1w specs
+    ow_start(40, 1);
+    ow_state = OW_PMON_WRITE_CHK;
+    break;
+  case OW_PMON_WRITE_CHK:
+    if(ow_error || ow_rx_buf[0] != 0x06) // check ACK
+    {
+      if(++ow_repeat < 3)
+        ow_state = OW_PMON_WRITE;
+      else
+      {
+        pwrmon_set_comm_status(ow_ch, 0);
+        ow_state = OW_PMON_NEXT;
+      }
+      break;
+    }
+    ow_repeat = 0;
+    ow_state = OW_PMON_RESTART;
+    break;
+  case OW_PMON_RESTART:
+    ow_tx_buf[0] = 0x55; // match ROM
+    memcpy(ow_tx_buf + 1, pwrmon_setup[ow_ch].ow_addr, 8);
+    ow_tx_buf[9] = 0xA2; // Restart
+    ow_tx_buf[10] = 0x53; // Magic 0x5253 - little endian ??????????????
+    ow_tx_buf[11] = 0x52;
+    ow_start(12, 1);
+    ow_state = OW_PMON_RESTART_CHK;
+    break;
+  case OW_PMON_RESTART_CHK:
+    if(ow_error || ow_rx_buf[0] != 0x06) // check ACK
+    {
+      if(++ow_repeat < 3)
+        ow_state = OW_PMON_RESTART;
+      else
+      {
+        pwrmon_set_comm_status(ow_ch, 0);
+        ow_state = OW_PMON_NEXT;
+      }
+      break;
+    }
+    pwrmon_state[ow_ch].write_sensor_setup = 0;
+    ow_repeat = 0;
+    ow_state = OW_PMON_READ_FULL;
+    break;
+  case OW_PMON_READ_SETUP:	
+    ow_tx_buf[0] = 0x55; // match ROM
+    memcpy(ow_tx_buf + 1, pwrmon_setup[ow_ch].ow_addr, 8);
+    ow_tx_buf[9]  = 0x60; // Read mem
+    ow_tx_buf[10] = 0x00; // starting addr
+    ow_tx_buf[11] = 0x1A; // data len
+    ow_start(12, 0x1A + 2); // send tx_buf, get data + crc
+    ow_state = OW_PMON_READ_SETUP_CHK;
+    break;
+  case OW_PMON_READ_SETUP_CHK:
+    if(ow_error == 0)
+    {
+	  crc16 = 0x0000;  // initial value	
+      crc16 = ow_crc16(crc16, ow_rx_buf, 0x1a);
+      if (crc16 != (((ow_rx_buf[0x1A + 0] << 8) & 0xff00) | ow_rx_buf[0x1A + 1])) 
+      {
+        ow_error = 8;		
+      }
+    }
+    if(ow_error)
+    {
+      if(++ow_repeat < 3)
+        ow_state = OW_PMON_READ_SETUP;
+      else
+      {
+        pwrmon_set_comm_status(ow_ch, 0);
+        ow_state = OW_PMON_NEXT;
+      }
+      break;
+    }
+
+    pwrmon_parse_setup_data_from_sensor(ow_ch, ow_rx_buf);
+    ow_repeat = 0;
+    ow_state = OW_PMON_READ_FULL;
+    // проваливаемся
+  case OW_PMON_READ_FULL:
+    ow_tx_buf[0] = 0x55; // match ROM
+    memcpy(ow_tx_buf + 1, pwrmon_setup[ow_ch].ow_addr, 8);
+    ow_tx_buf[9] = 0x62; // Read Stats Full
+	ow_start(10, 1 + 26 + 2); // size + data + crc16
+	ow_state = OW_PMON_READ_FULL_CHK;	
+    break;
+  case OW_PMON_READ_FULL_CHK:
+    if(ow_error == 0)
+    {	
+	  crc16 = 0x0000;  // initial value
+      crc16 = ow_crc16(crc16, &ow_rx_buf[1], 26);	  
+      if (crc16 != (((ow_rx_buf[27 + 0] << 8) & 0xff00) | ow_rx_buf[27 + 1])) 
+      {
+        ow_error = 8;
+      }
+    }
+    if(ow_error)
+    {
+      if(++ow_repeat < 3)
+        ow_state = OW_PMON_READ_FULL;
+      else
+      {
+        pwrmon_set_comm_status(ow_ch, 0);
+        ow_state = OW_PMON_NEXT;
+      }
+      break;
+    }
+    pwrmon_parse_full_stats_from_sensor(ow_ch, ow_rx_buf);
+    pwrmon_state[ow_ch].refresh = 0; // reset flag, setup and full data now ready
+    ow_state = OW_PMON_NEXT;
+    break;
+  case OW_PMON_READ_SHORT:
+    ow_tx_buf[0] = 0x55; // match ROM
+    memcpy(ow_tx_buf + 1, pwrmon_setup[ow_ch].ow_addr, 8);
+    ow_tx_buf[9] = 0x64; // Read Stats Short
+    ow_start(10, 1 + 10 + 2); // Read Len, Data, Crc
+    ow_state = OW_PMON_READ_SHORT_CHK;
+    break;
+  case OW_PMON_READ_SHORT_CHK:
+    if(ow_error == 0)
+    {
+      crc16 = 0x0000;  // initial value
+      crc16 = ow_crc16(crc16, ow_rx_buf, 11);
+      if (crc16 != (((ow_rx_buf[11 + 0] << 8) & 0xff00) | ow_rx_buf[11 + 1])) 
+        ow_error = 8;
+    }
+    if(ow_error)
+    {
+      if(++ow_repeat < 3)
+        ow_state = OW_PMON_READ_SHORT;
+      else
+      {
+        pwrmon_set_comm_status(ow_ch, 0);
+        ow_state = OW_PMON_NEXT;
+      }
+      break;
+    }
+    pwrmon_parse_short_stats_from_sensor(ow_ch, ow_rx_buf);
+    ow_state = OW_PMON_NEXT;
+    break;
+  case OW_PMON_DONE:
   case OWT_START:
-    if(ow_ch == -1)
+    ow_ch = -1;
+    ow_state = OWT_NEXT;
+    // проваливаемся
+  case OWT_NEXT:
+    if(++ow_ch == TERMO_N_CH)
     {
       ow_state = OW_START;
-      ow_scan_time = sys_clock_100ms + 40;
+      ow_scan_time = sys_clock_100ms + TERMO_READ_PERIOD / 100 - 10; // -10 is T conv pause!
+      break;
     }
-    else
-      ow_state = OWT_CONVERT;
-    /// break; // 18.10.2014 проваливаемся, выходить в суперлуп нежелательно, чтобы не поменялось ow_ch != -1
-  case OWT_CONVERT:
-    if(ow_ch != -1)
-    {
-      ow_tx_buf[0] = 0x55; // match rom
-      memcpy(ow_tx_buf + 1, termo_setup[ow_ch].ow_addr, 8);
-      ow_tx_buf[9] = 0x44; // conv T
-      ow_start(10,0);
-      ow_state = OWT_CONV_CHK;
-    }
-    break;
-  case OWT_CONV_CHK:
-    if(ow_error != 0)
-    { // 1w error
-      if(++ow_repeat <= 3)
-      {
-        ow_state = OWT_CONVERT; // repeat on next cycle
-      }
-      else
-      {
-        termo_state[ow_ch].status = 0;
-        termo_state[ow_ch].value = 0;
-      }
-    }
-    else
-    { // no 1w error
-      ow_repeat = 0;
-      if(ow_next())
-        ow_state = OWT_CONVERT;
-      else
-      { // pass to read after 1s pause
-        ow_scan_time = sys_clock_100ms + 10;
-        ow_state = OWT_READ;
-      }
-    }
-    break;
+    if(termo_setup[ow_ch].ow_addr[0] == 0)
+      break;
+    ow_repeat = 0;
+    // проваливаемся
   case OWT_READ:
-    if(ow_ch != -1)
-    {
-      ow_tx_buf[0] = 0x55; // match rom
-      memcpy(ow_tx_buf+1, termo_setup[ow_ch].ow_addr, 8);
-      ow_tx_buf[9] = 0xbe; // read s-pad
-      ow_start(10, 9);
-      ow_state = OWT_READ_CHK;
-    }
+    ow_tx_buf[0] = 0x55; // match rom
+    memcpy(ow_tx_buf+1, termo_setup[ow_ch].ow_addr, 8);
+    ow_tx_buf[9] = 0xbe; // read s-pad
+    ow_start(10, 9);
+    ow_state = OWT_READ_CHK;
     break;
   case OWT_READ_CHK:
     if(ow_error == 0)
@@ -744,7 +984,7 @@ void ow_scan(void)
       if(++ow_repeat <= 3 && ow_t_valid_data())
       {
         ow_state = OWT_READ;
-        break; // repeat with current ow_ch on the next main cycle
+        break;
       }
       else
       { // unrecoverable error
@@ -752,13 +992,7 @@ void ow_scan(void)
         termo_state[ow_ch].value = 0;
       }
     }
-    if(ow_next())
-      ow_state = OWT_READ;
-    else
-    {
-      ow_scan_time = sys_clock_100ms + TERMO_READ_PERIOD / 100 - 10; // -10 is T conv pause!
-      ow_state = OW_START;
-    }
+    ow_state = OWT_NEXT;
     break;
   } // switch
 }

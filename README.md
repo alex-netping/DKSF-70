@@ -5,6 +5,7 @@ Firmware DKSF 70 for Uniping Server v3
 Folder structure:
 ================
 /src/ - firmware source code and build projects
+/doc/ - documentation
 
 Building the firmware
 =====================

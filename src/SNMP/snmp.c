@@ -71,6 +71,13 @@
 v2.22-70
 15.05.2014
   notify module support
+v2.23-70
+29.05.2015
+  check_community() bugfix (it was length truncation before compare)
+  nf_disable in snmp_send_trap()
+v2.24-70
+29.06.2015
+ snmp_create_trap_v2(), use of valid_ip() in snmp_send_trap()
 */
 
 #include "platform_setup.h"
@@ -85,20 +92,20 @@ v2.22-70
 #include "mib_tree.c"
 
 #ifndef SNMP_DEBUG
-	
+
 	#undef DEBUG_SHOW_TIME_LINE
-	#undef DEBUG_MSG			
+	#undef DEBUG_MSG
 	#undef DEBUG_PROC_START
 	#undef DEBUG_PROC_END
 	#undef DEBUG_INPUT_PARAM
         #undef DEBUG_OUTPUT_PARAM
 
 	#define DEBUG_SHOW_TIME_LINE
-	#define DEBUG_MSG(...)        // LBS 06.2009			
+	#define DEBUG_MSG(...)        // LBS 06.2009
 	#define DEBUG_PROC_START(msg)
 	#define DEBUG_PROC_END(msg)
-	#define DEBUG_INPUT_PARAM(msg,val)	
-        #define DEBUG_OUTPUT_PARAM(msg,val)	
+	#define DEBUG_INPUT_PARAM(msg,val)
+        #define DEBUG_OUTPUT_PARAM(msg,val)
 #endif
 
 /* legacy
@@ -1037,14 +1044,16 @@ int parse_fw_update_commands(unsigned pdu_mode, unsigned short *oid, unsigned oi
 unsigned char check_community(unsigned char *community) // community is pasc. string!
 {
   unsigned char allow = 0;
-  unsigned char buf[sizeof sys_setup.community_r + 12];
+  char buf[sizeof sys_setup.community_r + 12];
   int n;
 
-  n = community[0] + 1;
-  if(n > sizeof sys_setup.community_r) n = sizeof sys_setup.community_r;
+  if(community[0] == sys_setup.community_r[0])
+    if(memcmp(community, sys_setup.community_r, community[0] + 1) == 0)
+      allow |= 1; // allow read
 
-  if(memcmp(community, sys_setup.community_r, n) == 0) allow |= 1; // allow read
-  if(memcmp(community, sys_setup.community_w, n) == 0) allow |= 2; // allow write
+  if(community[0] == sys_setup.community_w[0])
+    if(memcmp(community, sys_setup.community_w, community[0] + 1) == 0)
+      allow |= 2; // allow write
 
   n = sizeof sys_setup.community_r;
   memset(buf, 0xff, n);
@@ -1052,10 +1061,10 @@ unsigned char check_community(unsigned char *community) // community is pasc. st
   if(memcmp(buf, sys_setup.community_w, n) == 0) allow |= 1 | 2 | 4; // empty flash => allow write & change
 
   // '0000007BSWITCH' for serial=123  (serial is const unsigned in BOOT_SERIAL segment)
-  sprintf((char*)buf + 1, "%08X", *(unsigned*)0x0FFC /*serial*/);
+  sprintf(buf + 1, "%08X", serial);
   n = sys_setup.community_w[0];
   if(n >= sizeof sys_setup.community_w) n = sizeof sys_setup.community_w - 1;
-  util_cpy(sys_setup.community_w + 1, buf + 9, n);
+  memcpy(buf + 9, sys_setup.community_w + 1, n);
   n += 8;
   buf[0] = n;
   if(memcmp(community, buf, n) == 0) allow |= 1 | 2 | 4; // allow all + setup
@@ -1270,6 +1279,50 @@ void snmp_create_trap(unsigned char *enterprise) // v2
   snmp_trap_varbind_list_seq_pos = snmp_add_seq();
 }
 
+void snmp_create_trap_v2(unsigned snmp_trap_oid_value_len, unsigned char *snmp_trap_oid_value) // v2
+{
+  static unsigned snmp_v2_trap_req_id;
+
+  snmp_ds = udp_create_packet();
+  if(snmp_ds == 0xff) return;
+
+  *(unsigned short*)udp_tx_head.dest_port = SNMP_TRAP_PORT;
+  *(unsigned short*)udp_tx_head.src_port  = SNMP_PORT;
+  udp_put_tx_header(snmp_ds);
+  udp_tx_body_pointer = 0;
+
+  // Snmp header
+  snmp_trap_body_seq_pos = snmp_add_seq();
+  // Version
+  snmp_add_asn_integer(1); //v2
+  // Community
+  snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING, sys_setup.community_r[0], sys_setup.community_r+1);
+  // Trap PDU
+  snmp_add_raw_bytes(4, 0xA7 , 0x82, 0, 0);
+  snmp_trap_pdu_seq_pos = udp_tx_body_pointer;
+  // RequestId
+  snmp_add_asn_integer(++snmp_v2_trap_req_id);
+  // error-status
+  snmp_add_asn_integer(0);
+  // error-index
+  snmp_add_asn_integer(0);
+  // Varbind list
+  snmp_trap_varbind_list_seq_pos = snmp_add_seq();
+  unsigned seq;
+  // Timestamp
+  seq = snmp_add_seq();
+  static const unsigned char sys_up_time_oid[] = {0x2b, 6, 1, 2, 1, 1, 3, 0};
+  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof sys_up_time_oid, (void*)sys_up_time_oid);
+  snmp_add_asn_timestamp( ((unsigned)sys_clock()) / 10 ); // 1/100s ticks, 32b unsigned
+  snmp_close_seq(seq);
+  // snmpTrapOID
+  seq = snmp_add_seq();
+  static const unsigned char snmp_trap_oid[] = {0x2b, 6, 1, 6, 3, 1, 1, 4, 1, 0};
+  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof snmp_trap_oid, (void*)snmp_trap_oid);
+  snmp_add_asn_obj(SNMP_OBJ_ID, snmp_trap_oid_value_len, snmp_trap_oid_value);
+  snmp_close_seq(seq);
+}
+
   /// untested, not used !!!
 void snmp_add_vbind_integer32(const unsigned char *enterprise, unsigned char last_oid_component, int value)
 {
@@ -1297,8 +1350,13 @@ void add_vbind_email(void) // 20.08.2012
   snmp_close_seq(seq_ptr);
 }
 
-void snmp_send_trap(unsigned char *ip) // v2
+void snmp_send_trap(unsigned char *ip)
 {
+  if(!valid_ip(ip) || sys_setup.nf_disable)
+  {
+    nic_free_packet(snmp_ds);
+    return;
+  }
 #ifndef NOTIFY_MODULE
   if(sys_setup.notification_email[0]) // 30.10.2013
     add_vbind_email();

@@ -70,4 +70,12 @@ v2.3-70
 v2.4-70
 10.02.2015
   bugfix in sms_snmp_set(), no returned data
+v2.4-70
+2.06.2015
+  nf_disable in the all sms_xxx_event() routines
+v2.5-70
+16.06.2015
+  cmd_ir() bugfix
+  pinger_exec() fix, SMS reqest possible if SMS notif. switched off; powersaving don't stop poll
+  changed relay state reply: P1[mode][+/-] to show actual relay state
 */

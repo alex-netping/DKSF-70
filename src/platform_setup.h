@@ -19,9 +19,9 @@
 #define CPU_TYPE        _CPU_NXP1778
 // Версия проекта
 
-//#define PROJECT_MODEL  70
-#define PROJECT_MODEL  71 // w/o modem and serial ports
-#define PROJECT_VER    4
+#define PROJECT_MODEL  70
+//#define PROJECT_MODEL  71 // w/o modem and serial ports
+#define PROJECT_VER    5
 //#define PROJECT_BUILD  1.2 // initial release, dkst70.1.1 hardware, numerous hw bugs, curloop and 232 are disabled
 //#define PROJECT_BUILD 1.3.C-1 // board comissioning tests
 //#define PROJECT_BUILD  1.4 // added web SN setup (only webpage); modified sw_i2c; modified delay.c
@@ -41,9 +41,12 @@
 //#define PROJECT_BUILD  4.1 // see _HS.txt
 //#define PROJECT_BUILD  4.2 // notifications from io output; dns slots added for w-dog, sendmail is ok now; sendmail cc: saving fixed; snmp test buttons fixed; minor html fix; downgrade warning fixed
 //#define PROJECT_BUILD  4.3 // released limited? no src published; pinger resources bugfix
-//#define PROJECT_BUILD  4 // sendmail ignore errors on session close; tcp issue with dups longer than original; session timeout; clear ip of empty fqdn posted; resr TCP Client errors
-#define PROJECT_BUILD  5 // curdet and wtimer setup interference removed; at.html fix; updated assembly process
-#define PROJECT_CHAR   'A'
+//#define PROJECT_BUILD  4.4 // sendmail ignore errors on session close; tcp issue with dups longer than original; session timeout; clear ip of empty fqdn posted; resr TCP Client errors
+//#define PROJECT_BUILD  4.5 // curdet and wtimer setup interference removed; at.html fix; updated assembly process
+//#define PROJECT_BUILD  4.6 // snmp community length bugfix; level legend to trap and sms; credentials lengh limited; RTC set on Enter; JSON string escaping; io.cgi?io4&mode=0/1/2; " : in text fields, http credentials
+//#define PROJECT_BUILD  4.7 // minor bugfix on QA; sendmail update (Date and #)
+#define PROJECT_BUILD  1 // not released yet; 220v sensors; 1w smoke; multi 1w RH
+#define PROJECT_CHAR   'B'
 #define PROJECT_ASSM   1
 
 #include <string.h>
@@ -171,6 +174,8 @@ extern volatile systime_t sys_clock_counter;
 #include "def\sms_def.h"
 #endif
 #include "def\cur_det_def.h"
+#include "def\smoke_def.h"
+#include "def\pwrmon_def.h"
 #include "def\notify_def.h" // after io,termo,curloop,rh
 #include "def\sendmail_def.h"
 

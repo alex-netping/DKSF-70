@@ -14,7 +14,7 @@ function send()
   var d='';
   for(var n=0;n<s.length;++n) d+=hexb(s.charCodeAt(n));
   d+='0D';
-  while(d.length < 16*2) d+='00';
+  while(d.length < 64*2) d+='00';
   sender.data.value=d;
   sender.submit();
 }

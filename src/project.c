@@ -252,7 +252,7 @@ void phy_reset_line_set(void)   { pinset(PHY_RST); }
 ////////////////////// HW detect /////////////////////////////////////////
 
 unsigned char proj_hardware_model;
-unsigned short gsm_model;
+unsigned short proj_gsm_model;
 
 #warning ATTN call proj_hardware_detect() on startup!
 unsigned proj_hardware_detect(void)
@@ -276,8 +276,8 @@ unsigned proj_hardware_detect(void)
       if(u < 372 * v) // 372 = 0.3v/3.3v*4096
         break;
     proj_hardware_model = v;
-    if(v == 1) gsm_model = 52;
-    else gsm_model = 900;
+    if(v == 1) proj_gsm_model = 52;
+    else proj_gsm_model = 900;
   }
   return proj_hardware_model;
 }
@@ -524,6 +524,4 @@ void gsm_led(int state)
 }
 
 //////////////////////////////////////////////////////////////////////////
-
-
 

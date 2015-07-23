@@ -35,38 +35,205 @@ v2.3-70
 v2.4-70
 24.11.2014
   JSON-P returns relhum_result(...) instead of rh_result(...)
+v3.0
+22.06.2015
+  multiple 1w sensors
 */
 
 #include "platform_setup.h"
 #include "eeprom_map.h"
 #include "plink.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 
 #define RH_IDLE_PERIOD 6000 // ms
 
-const unsigned char rh_hyst_h = 2 - 1;
+static const unsigned char rh_hyst = 1;
+static const unsigned char t_hyst = 1;
 
-void rh_check_status(void);
+//const unsigned relhum_signature = 561132741;
+const unsigned relhum_signature = 561132753; // v3
 
-const unsigned relhum_signature = 561132741;
-struct relhum_setup_s relhum_setup;
-unsigned char rh_status_h;
+struct relhum_setup_s relhum_setup[RELHUM_MAX_CH];
+struct relhum_state_s relhum_state[RELHUM_MAX_CH];
 
-enum relhum_status_e rh_status = RH_STATUS_FAILED;
+void relhum_send_trap_h(unsigned ch);
+void relhum_send_trap_t(unsigned ch);
 
-unsigned short rh_raw_h;
-unsigned short rh_raw_t;
-int            rh_real_h;
-int            rh_real_t;
-int            rh_real_t_100; // *100 temperature
+void rh_check_status(unsigned ch)
+{
+  if(ch >= RELHUM_MAX_CH) return;
+  struct relhum_setup_s *su = &relhum_setup[ch];
+  struct relhum_state_s *st = &relhum_state[ch];
+  struct relhum_notify_s *nf = &relhum_notify[ch];
+  int a, b;
+#if PROJECT_CHAR != 'E'
+  static const char * const status_txt[4] = {"отказ","ниже нормы","в норме","выше нормы"};
+#else
+  static const char * const status_txt[4] = {"failed","below safe","safe","above safe"};
+#endif
+
+  int hs = st->rh_status;
+  if(st->error == 0)
+  {
+    switch(st->rh_status)
+    {
+    case 0: a =  0; b =  0; break;
+    case 1: a =  1; b =  1; break;
+    case 2: a = -1; b =  1; break;
+    case 3: a = -1; b = -1; break;
+    }
+    a = su->rh_low + a * rh_hyst;
+    b = su->rh_high + b * rh_hyst;
+    if(st->rh < a) hs = 1;
+    else if(st->rh <= b) hs = 2;
+    else hs = 3;
+  }
+
+  int ts = st->t_status;
+  if(st->error == 0)
+  {
+    switch(st->t_status)
+    {
+    case 0: a =  0; b =  0; break;
+    case 1: a =  1; b =  1; break;
+    case 2: a = -1; b =  1; break;
+    case 3: a = -1; b = -1; break;
+    }
+    a = su->t_low + a * t_hyst;
+    b = su->t_high + b * t_hyst;
+    if(st->t < a) ts = 1;
+    else if(st->t <= b) ts = 2;
+    else ts = 3;
+  }
+
+  if(st->error && st->rh_status != 0)
+  { // sensor just failed
+    st->rh_status = 0;
+    st->t_status = 0;
+    st->rh = 0;
+    st->t = 0;
+    notify(nf->fail,
+#if PROJECT_CHAR != 'E'
+      "Датчик влажности %u%s - отказ",
+#else
+      "Humidity %u%s - failed",
+#endif
+       ch + 1, quoted_name(su->name)
+    );
+#ifdef SMS_MODULE
+    if(nf->fail & NOTIFY_SMS)
+      if(sys_setup.nf_disable == 0)
+        sms_msg_printf("RH%u%s FAILED", ch+1, quoted_name(su->name));
+#endif
+    if(nf->fail & NOTIFY_TRAP)
+    {
+      relhum_send_trap_h(ch);
+      relhum_send_trap_t(ch);
+    }
+    return;
+  }
+
+  if(st->rh_status == 0 && st->error == 0)
+  { // sensor just restored
+    st->rh_status = hs;
+    st->t_status = ts;
+    notify(nf->fail,
+#if PROJECT_CHAR != 'E'
+      "Датчик влажности %u%s работает, %u%% (%s %u..%u), %d град.C (%s %d..%d)",
+#else
+      "Humidity %u%s is working, %u%% (%s %u..%u), %d deg.C (%s %d..%d)",
+#endif
+       ch + 1, quoted_name(su->name),
+       st->rh,  status_txt[hs], su->rh_low, su->rh_high,
+       st->t, status_txt[ts], su->t_low, su->t_high
+    );
+#ifdef SMS_MODULE
+    if(nf->fail & NOTIFY_SMS)
+      if(sys_setup.nf_disable == 0)
+        sms_msg_printf("RH%u%s is OK, %u%% %s, %dC %s",
+          ch+1, quoted_name(su->name),
+          st->rh, status_txt[hs],
+          st->t, status_txt[ts]
+        );
+#endif
+    if(nf->fail & NOTIFY_TRAP)
+    {
+      relhum_send_trap_h(ch);
+      relhum_send_trap_t(ch);
+    }
+    return;
+  }
+
+  if(hs != st->rh_status)
+  {
+    unsigned mask;
+    if(hs == 1) mask = nf->h_low;
+    else if(hs == 2) mask = nf->h_norm;
+    else mask = nf->h_high;
+    notify(mask,
+#if PROJECT_CHAR != 'E'
+       "Датчик влажности %u%s - %u%% (%s %u..%u%%)",
+#else
+       "Humidity %u%s - %u%% (%s %u..%u%%)",
+#endif
+        ch + 1, quoted_name(su->name),
+        st->rh, status_txt[hs], su->rh_low, su->rh_high
+     );
+#ifdef SMS_MODULE
+    if(mask & NOTIFY_SMS)
+      if(sys_setup.nf_disable == 0)
+        sms_msg_printf("RH%u%s %u%% (%s %u..%u%%)",
+          ch+1, quoted_name(su->name),
+          st->rh, status_txt[hs], su->rh_low, su->rh_high
+        );
+#endif
+    st->rh_status = hs; // save new status before trap
+    if(mask & NOTIFY_TRAP)
+      relhum_send_trap_h(ch);
+  }
+
+  if(ts != st->t_status)
+  {
+    unsigned mask;
+    if(ts == 1) mask = nf->t_low;
+    else if(ts == 2) mask = nf->t_norm;
+    else mask = nf->t_high;
+    notify(mask,
+#if PROJECT_CHAR != 'E'
+       "Датчик влажности %u%s - температура %dC (%s %u..%uC)",
+#else
+       "Humidity %u%s - temperature %dC (%s %d..%dC)",
+#endif
+        ch + 1, quoted_name(su->name),
+        st->t, status_txt[ts], su->t_low, su->t_high
+     );
+#ifdef SMS_MODULE
+    if(mask & NOTIFY_SMS)
+      if(sys_setup.nf_disable == 0)
+        sms_msg_printf("RH%u%s %dC (%s %d..%dC)",
+          ch+1, quoted_name(su->name),
+          st->t, status_txt[ts], su->t_low, su->t_high
+        );
+#endif
+    st->t_status = ts;  // save new status before trap
+    if(mask & NOTIFY_TRAP)
+      relhum_send_trap_t(ch);
+  }
+}
 
 void relhum_param_reset(void)
 {
-  memset(&relhum_setup, 0, sizeof relhum_setup);
-  relhum_setup.rh_high = 85;
-  relhum_setup.rh_low = 5;
-  relhum_setup.flags = 0;
+  memset(relhum_setup, 0, sizeof relhum_setup);
+  struct relhum_setup_s *rh = relhum_setup;
+  for(int n=0; n<RELHUM_MAX_CH; ++n, ++rh)
+  {
+    rh->rh_high = 85;
+    rh->rh_low  = 5;
+    rh->t_low   = 10;
+    rh->t_high  = 60;
+  }
   EEPROM_WRITE(&eeprom_relhum_setup, &relhum_setup, sizeof eeprom_relhum_setup);
   EEPROM_WRITE(&eeprom_relhum_signature, &relhum_signature, sizeof eeprom_relhum_signature);
 }
@@ -77,210 +244,121 @@ void relhum_init(void)
   EEPROM_READ(&eeprom_relhum_signature, &sign, sizeof sign);
   if(sign != relhum_signature) relhum_param_reset();
   EEPROM_READ(&eeprom_relhum_setup, &relhum_setup, sizeof relhum_setup);
-
-  ///relhum_timer = sys_clock() + 3000;
-  ////////rh_sck(0);
-  rh_real_h = 0;
-  rh_real_t = 0;
-  rh_status_h = 0;
-  rh_status = RH_STATUS_FAILED;
-}
-
-//#warning remove debug
-//int goodcnt;
-
-void relhum_exec(void)
-{
-  static unsigned char cnt = 0;
-  if(++cnt<139) return;
-  cnt = 0;
-  // 1W only, scan in ow.c
-  rh_check_status();
-
-/*
-  ////// tests ////////////////////////////////////////
-#warning remove debug, also restore old swi2c.c
-  int qqq;
-
-// read Si7005 id
-
-aswi2c_start(0);
-aswi2c_write_byte(0,0x80);
-aswi2c_write_byte(0,0x11);
-aswi2c_start(0);
-aswi2c_write_byte(0,0x81);
-qqq=aswi2c_read_byte(0,0);
-qqq=qqq*1;
-aswi2c_stop(0);
-if(qqq != 0x50)
-{
-  delay(1);
-  goodcnt = 0;
-}
-else ++goodcnt;
-
-
-  // read T
-aswi2c_start(0);
-aswi2c_write_byte(0,0x80);
-aswi2c_write_byte(0,0x03);
-aswi2c_write_byte(0,0x11);
-aswi2c_stop(0);
-delay(75);
-aswi2c_start(0);
-aswi2c_write_byte(0,0x80);
-aswi2c_write_byte(0,0x01);
-aswi2c_start(0);
-aswi2c_write_byte(0,0x81);
-qqq=aswi2c_read_byte(0,1) << 8;
-qqq+=aswi2c_read_byte(0,0);
-qqq=(qqq>>2)/32-50;
-aswi2c_stop(0);
-
-if(qqq < 18 || qqq > 29)
-{
-  goodcnt = 0;
-}
-else ++goodcnt;
-  */
-
-/*
-aswi2c_start(0);
-aswi2c_write_byte(0,0x90|7<<1);
-aswi2c_write_byte(0,0x00);
-aswi2c_start(0);
-aswi2c_write_byte(0,0x91|7<<1);
-qqq=aswi2c_read_byte(0, 1);
-qqq=aswi2c_read_byte(0, 0);
-aswi2c_stop(0);
-*/
-
-///////////////// end of tests /////////////////////////////
-
 }
 
 int relhum_snmp_get(unsigned id, unsigned char *data)
 {
+  unsigned ch = snmp_data.index - 1;
+  if(ch >= RELHUM_MAX_CH) return SNMP_ERR_NO_SUCH_NAME;
+  struct relhum_setup_s *su = &relhum_setup[ch];
+  struct relhum_state_s *st = &relhum_state[ch];
   int val = 0;
-  switch(id&0xfffffff0)
+  switch(snmp_data.id & 0xfffffff0)
   {
-  case 0x8420: val = rh_real_h; break;
-  case 0x8430: val = rh_status; break;
-  case 0x8440: val = rh_real_t; break;
-  case 0x8450: val = rh_status_h; break;
-  case 0x8470: val = relhum_setup.rh_high; break;
-  case 0x8480: val = relhum_setup.rh_low; break;
-  case 0x8490: val = rh_real_t_100; break;
+  case 0x8410: val = ch + 1; break;
+  case 0x8420: val = st->rh; break;
+  case 0x8430: val = st->rh_status; break;
+  case 0x8440: val = st->t; break;
+  case 0x8450: val = st->t_status; break;
+  case 0x8460: snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING, su->name[0], su->name + 1); return 0;
+  case 0x8470: val = su->rh_high; break;
+  case 0x8480: val = su->rh_low; break;
+  case 0x8490: val = su->t_high; break;
+  case 0x84a0: val = su->t_low; break;
   default: return SNMP_ERR_NO_SUCH_NAME;
   }
   snmp_add_asn_integer(val);
   return 0;
 }
 
-
-const unsigned char relhum_enterprise[] =
-// .1.3.6.1.4.1.25728.8400.9
-{SNMP_OBJ_ID, 11, // ASN.1 type/len, len is for 'enterprise' trap field
-0x2b,6,1,4,1,0x81,0xc9,0x00,0xc1,0x50,9}; // OID for "enterprise" in trap msg
-// .1.3.6.1.4.1.25728.8400.2
-unsigned char relhum_rh_trap_data_oid[] =
-{0x2b,6,1,4,1,0x81,0xc9,0x00,0xc1,0x50,2, // variable prefix
-0,0}; // last oid components (pre-last is variable, last is .0 for scalar oid)
+unsigned char relhum_oid[]=
+// .1.3.6.1.4.1.25728.8400.0.0.0
+{0x2b, 6, 1, 4, 1, 0x81, 0xc9, 0x00, 0xc1, 0x50,
+0, 0, 0};
 
 
-void relhum_rh_add_vbind_integer(unsigned char last_oid_component, int value)
+void relhum_add_vbind_integer(int suffix1, int suffix2, int suffix3, int value)
 {
-  unsigned seq_ptr;
-  seq_ptr = snmp_add_seq();
-  relhum_rh_trap_data_oid[sizeof relhum_rh_trap_data_oid - 2] = last_oid_component; // before 'scalar' zero postfix
-  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof relhum_rh_trap_data_oid, relhum_rh_trap_data_oid);
+  relhum_oid[sizeof relhum_oid - 3] = suffix1;
+  relhum_oid[sizeof relhum_oid - 2] = suffix2;
+  relhum_oid[sizeof relhum_oid - 1] = suffix3;
+  unsigned seq_ptr = snmp_add_seq();
+  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof relhum_oid, relhum_oid);
   snmp_add_asn_integer(value);
   snmp_close_seq(seq_ptr);
 }
 
-void relhum_rh_make_trap(void)
+void relhum_make_trap_h(unsigned ch)
 {
-  snmp_create_trap((void*)relhum_enterprise);
+  relhum_oid[sizeof relhum_oid - 3] = 6; // h trap
+  relhum_oid[sizeof relhum_oid - 2] = (relhum_notify[ch].flags & NOTIFY_COMMON_ALL_CHANNELS) ? 127 : 100 + relhum_state[ch].rh_status;
+  relhum_oid[sizeof relhum_oid - 1] = (relhum_notify[ch].flags & NOTIFY_COMMON_ALL_EVENTS) ? 99 : ch + 1;
+
+  snmp_create_trap_v2(sizeof relhum_oid, relhum_oid);
   if(snmp_ds == 0xff) return; // if can't create packet
-  relhum_rh_add_vbind_integer(5, rh_status_h);    // npRelHumSensorStatusH
-  relhum_rh_add_vbind_integer(2, rh_real_h);      // npRelHumSensorValueH
-  relhum_rh_add_vbind_integer(7, relhum_setup.rh_high); // npRelHumSafeRangeHigh
-  relhum_rh_add_vbind_integer(8, relhum_setup.rh_low);  // npRelHumSafeRangeLow
+
+  relhum_add_vbind_integer(3, 1, 0, ch + 1); // npRelHumTrapDataN
+  relhum_add_vbind_integer(3, 2, 0, relhum_state[ch].rh); // npRelHumTrapDataValue
+  relhum_add_vbind_integer(3, 4, 0, relhum_state[ch].rh_status); // npRelHumTrapDataStatus
+
+  unsigned seq_ptr = snmp_add_seq();
+  relhum_oid[sizeof relhum_oid - 2] = 6; // npRelHumTrapDataName
+  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof relhum_oid, relhum_oid);
+  snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING, relhum_setup[ch].name[0], relhum_setup[ch].name+1);
+  snmp_close_seq(seq_ptr);
+
+  relhum_add_vbind_integer(3, 7, 0, relhum_setup[ch].rh_high); // npRelHumTrapDataSafeRangeHigh
+  relhum_add_vbind_integer(3, 8, 0, relhum_setup[ch].rh_low); // npRelHumTrapDataSafeRangeLow
 }
 
-void rh_check_status(void)
+void relhum_make_trap_t(unsigned ch)
 {
-  unsigned char old_status_h = rh_status_h;
-  unsigned low = relhum_setup.rh_low;
-  unsigned high = relhum_setup.rh_high;
-  if(rh_status == RH_STATUS_FAILED)
-    rh_status_h = 0; // if sensor offline or failed
-  else
-  {
-    switch(rh_status_h)
-    {
-    case 3: high += rh_hyst_h; break;
-    case 2: high += rh_hyst_h; low -= rh_hyst_h; break;
-    case 1: low -= rh_hyst_h; break;
-    }
-    if(rh_real_h > high) rh_status_h = 3;
-    else if(rh_real_h < high && rh_real_h > low) rh_status_h = 2;
-    else if(rh_real_h < low) rh_status_h = 1;
-  }
-  if(rh_status_h != old_status_h)
-  {
-    char *fmt = "r.h. error";
-    switch(rh_status_h)
-    {
-#if PROJECT_CHAR != 'E'
-    case 3: fmt = "Влажность %d%%, выше нормы (%d..%d%%)"; break;
-    case 2: fmt = "Влажность %d%%, в пределах нормы (%d..%d%%)"; break;
-    case 1: fmt = "Влажность %d%%, ниже нормы (%d..%d%%)"; break;
-    case 0: fmt = "Влажность - датчик отсутствует или неисправен"; break;
-#else
-    case 3: fmt = "Humidity %d%%, above safe (%d..%d%%)"; break;
-    case 2: fmt = "Humidity %d%%, in safe range (%d..%d%%)"; break;
-    case 1: fmt = "Humidity %d%%, below safe (%d..%d%%)"; break;
-    case 0: fmt = "Humidity sensor is absent or failed"; break;
-#endif
-    }
-#ifdef NOTIFY_MODULE
-    unsigned mask = 0;
-    switch(rh_status_h)
-    {
-    case 0: mask = relhum_notify.fail; break;
-    case 1: mask = relhum_notify.low; break;
-    case 2: mask = relhum_notify.norm; break;
-    case 3: mask = relhum_notify.high; break;
-    }
-    notify(mask, fmt, rh_real_h, relhum_setup.rh_low, relhum_setup.rh_high);
-    if(mask & NOTIFY_TRAP)
-    {
-      if(valid_ip(sys_setup.trap_ip1)) { relhum_rh_make_trap(); snmp_send_trap(sys_setup.trap_ip1); }
-      if(valid_ip(sys_setup.trap_ip2)) { relhum_rh_make_trap(); snmp_send_trap(sys_setup.trap_ip2); }
-    }
-#ifdef SMS_MODULE
-    if(mask & NOTIFY_SMS)
-    {
-      sms_relhum_event();
-    }
-#endif
-#else
-    if(rh_status_h == 0) log_printf(fmt);
-    else log_printf(fmt, rh_real_h, relhum_setup.rh_low, relhum_setup.rh_high);
+  relhum_oid[sizeof relhum_oid - 3] = 7; // t trap
+  relhum_oid[sizeof relhum_oid - 2] = (relhum_notify[ch].flags & NOTIFY_COMMON_ALL_CHANNELS) ? 127 : 100 + relhum_state[ch].t_status;
+  relhum_oid[sizeof relhum_oid - 1] = (relhum_notify[ch].flags & NOTIFY_COMMON_ALL_EVENTS) ? 99 : ch + 1;
 
-    if(valid_ip(sys_setup.trap_ip1)) { relhum_rh_make_trap(); snmp_send_trap(sys_setup.trap_ip1); }
-    if(valid_ip(sys_setup.trap_ip2)) { relhum_rh_make_trap(); snmp_send_trap(sys_setup.trap_ip2); }
-#endif
-  } // if status changed
+  snmp_create_trap_v2(sizeof relhum_oid, relhum_oid);
+  if(snmp_ds == 0xff) return; // if can't create packet
+
+  relhum_add_vbind_integer(3, 1, 0, ch + 1); // npRelHumTrapDataN
+  relhum_add_vbind_integer(3, 2, 0, relhum_state[ch].t); // npRelHumTrapDataValue
+  relhum_add_vbind_integer(3, 4, 0, relhum_state[ch].t_status); // npRelHumTrapDataStatus
+
+  unsigned seq_ptr = snmp_add_seq();
+  relhum_oid[sizeof relhum_oid - 2] = 6; // npRelHumTrapDataName
+  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof relhum_oid, relhum_oid);
+  snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING, relhum_setup[ch].name[0], relhum_setup[ch].name+1);
+  snmp_close_seq(seq_ptr);
+
+  relhum_add_vbind_integer(3, 7, 0, relhum_setup[ch].t_high); // npRelHumTrapDataSafeRangeHigh
+  relhum_add_vbind_integer(3, 8, 0, relhum_setup[ch].t_low); // npRelHumTrapDataSafeRangeLow
+}
+
+void relhum_send_trap_h(unsigned ch)
+{
+  relhum_make_trap_h(ch); snmp_send_trap(sys_setup.trap_ip1);
+  relhum_make_trap_h(ch); snmp_send_trap(sys_setup.trap_ip2);
+}
+
+void relhum_send_trap_t(unsigned ch)
+{
+  relhum_make_trap_t(ch); snmp_send_trap(sys_setup.trap_ip1);
+  relhum_make_trap_t(ch); snmp_send_trap(sys_setup.trap_ip2);
 }
 
 unsigned relhum_http_get_status(unsigned pkt, unsigned more_data)
 {
-  char buf[256];
+  char buf[768];
   char *dest = buf;
-  dest += sprintf(dest, "status_data={rh_value:%d, t_value:%d, t_value_100:%d, rh_status_h:%u}",
-                          rh_real_h, rh_real_t, rh_real_t_100, rh_status_h);
+  int n;
+  struct relhum_state_s *st = relhum_state;
+  *dest++ = '('; *dest++ = '[';
+  for(n=0; n<RELHUM_MAX_CH && dest < buf + 600; ++n, ++st)
+  {
+    dest += sprintf(dest, "{rh:%u,rh_status:%u,t:%d,t_status:%u},",
+               st->rh, st->rh_status, st->t, st->t_status );
+  }
+  --dest; *dest++ = ']'; *dest++= ')';
   tcp_put_tx_body(pkt, (unsigned char*)buf, dest - buf);
   return 0; // no more data
 }
@@ -289,36 +367,60 @@ unsigned relhum_http_get(unsigned pkt, unsigned more_data)
 {
   char buf[768];
   char *dest = buf;
-  dest+=sprintf(dest,"var packfmt={");
-#ifdef OW_MODULE
-  PLINK(dest, relhum_setup, ow_addr);
-#endif
-  PLINK(dest, relhum_setup, rh_high);
-  PLINK(dest, relhum_setup, rh_low);
-  PLINK(dest, relhum_setup, flags);
-  PSIZE(dest, sizeof relhum_setup); // must be the last // alignment!
-  dest+=sprintf(dest, "};\nvar data={");
-#ifdef OW_MODULE
-  unsigned char *owa = relhum_setup.ow_addr;
-  if(owa[0] != 0)
-    dest += sprintf(dest, "ow_addr:\"%02x%02x %02x%02x %02x%02x %02x%02x\",",
-              owa[0], owa[1], owa[2], owa[3], owa[4], owa[5], owa[6], owa[7]);
-  else
-    dest += sprintf(dest, "ow_addr:\"\",");
-#endif
-  PDATA(dest, relhum_setup, rh_high);
-  PDATA(dest, relhum_setup, rh_low);
-  PDATA(dest, relhum_setup, flags);
-  --dest; // remove last comma
-  *dest++='}'; *dest++=';';
+  dest += sprintf(dest,"var packfmt={");
+  PLINK(dest, relhum_setup[0], name);
+  PLINK(dest, relhum_setup[0], ow_addr);
+  PLINK(dest, relhum_setup[0], rh_high);
+  PLINK(dest, relhum_setup[0], rh_low);
+  PLINK(dest, relhum_setup[0], t_high);
+  PLINK(dest, relhum_setup[0], t_low);
+  PSIZE(dest, sizeof relhum_setup[0]); // must be the last // alignment!
+  dest += sprintf(dest, "}; var data=[");
+  struct relhum_setup_s *su = &relhum_setup[more_data];
+  int n;
+  for(n = more_data;; ++su)
+  {
+    *dest++ = '{';
+    PDATA_PASC_STR(dest, *su, name);
+    PDATA_OW_ADDR(dest, *su, ow_addr);
+    PDATA(dest, *su, rh_high);
+    PDATA(dest, *su, rh_low);
+    PDATA(dest, *su, t_high);
+    PDATA(dest, *su, t_low);
+    --dest; // remove last comma
+    *dest++='}'; *dest++=',';
+    if(++n == RELHUM_MAX_CH)
+    {
+      --dest; // remove last comma
+      *dest++ = ']'; *dest++ = ';';
+      n = 0;
+      break;
+    }
+    if(dest > buf + sizeof buf - 200)
+      break;
+  }
   tcp_put_tx_body(pkt, (unsigned char*)buf, dest - buf);
-  return 0;
+  return n;
 }
 
 unsigned relhum_http_get_cgi(unsigned pkt, unsigned more_data)
 {
   char buf[128];
-  sprintf(buf, "relhum_result('ok', %u, %d, %u);", rh_real_h, rh_real_t, rh_status_h);
+  struct relhum_state_s *st;
+
+  strcpy(buf, "relhum_result('error');");
+  unsigned ch = atoi(req_args + 1);
+  if(ch >= RELHUM_MAX_CH) goto end;
+  st = &relhum_state[ch];
+  if(req_args[0] == 'h')
+  {
+    sprintf(buf, "relhum_result('ok', %u, %u);", st->rh, st->rh_status);
+  }
+  else if(req_args[0] == 't')
+  {
+    sprintf(buf, "relhum_result('ok', %d, %u);", st->t, st->t_status);
+  }
+end:
   tcp_put_tx_body(pkt, (unsigned char*)buf, strlen(buf));
   return 0;
 }
@@ -334,7 +436,6 @@ int relhum_http_set(void)
   return 0;
 }
 
-
 HOOK_CGI(rh_stat_get, relhum_http_get_status, mime_js, HTML_FLG_GET | HTML_FLG_NOCACHE );
 HOOK_CGI(relhum_get,  relhum_http_get,        mime_js, HTML_FLG_GET | HTML_FLG_NOCACHE );
 HOOK_CGI(relhum,      relhum_http_get_cgi,    mime_js, HTML_FLG_GET | HTML_FLG_NOCACHE );
@@ -344,12 +445,18 @@ void relhum_event(enum event_e event)
 {
   switch(event)
   {
-  case E_EXEC:
-    relhum_exec();
-    break;
   case E_RESET_PARAMS:
     relhum_param_reset();
     break;
   }
 }
-#warning ******* check MIB file, change inNormRange(2) -> inSafeRange(2) // done in 52/201/202,70
+
+#warning *** remove debugggg *** this is legacy shim! *****
+
+unsigned rh_real_h, rh_status_h;
+int rh_real_t;
+
+#warning ************ make En page
+#warning *********  rewrite relhum HTTP API doc
+#warning *********** check relhum.html save_notify() data forming, reserved and flags
+

@@ -119,6 +119,19 @@ v2.23-70
 v2.23-48
 24.12.2014
   alternative rewrite of io_snmp_set() for npIoPulseCounter bugfix
+v2.24-48
+25.03.2015
+  io.cgi?io1=2 implementation
+  sys_setup.nf_disable check in io_send_notification()
+v2.25-52/201/202
+19.02.2015
+  in io_exec(), logic of if..else.. fixed in trap sending w/o notify.c
+v2.26-60
+10.04.2015
+  level legend in io trap
+v2.27-70
+17.06.2015
+  io_http_get_cgi() ?io1=2 removed completely
 */
 
 #include "platform_setup.h"
@@ -127,7 +140,7 @@ v2.23-48
 ///Версия модуля
 #define  IO_VER	 2
 ///Сборка модуля
-#define  IO_BUILD 23
+#define  IO_BUILD 27
 
 
 //---------------- Раздел, где будут определяться константы модуля -------------------------

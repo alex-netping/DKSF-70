@@ -65,6 +65,16 @@ v21.18-70
 v21.19-54
 24.10.2014
   SSE ping
+v21.19-52/201/202
+13.02.2015
+  limit decoded len of user:password to avoid buffer overflow
+  exact uname/passwd length checks
+v21.20-60
+6.03.2015
+  escaping of pdata_pstring(), pdata_cstring()
+v21.21-48
+23.04.2015
+  pdata_ow_addr() added
 */
 
 #include <stdlib.h>
@@ -223,31 +233,28 @@ unsigned char decode_minibyte(unsigned char c)
 }
 
 // no CR LFs on input!
-void base64_decode(char *in, char *out, int maxlen)
+void base64_decode(char *in, char *out, size_t out_len)
 {
+  unsigned n = out_len - 1;
   unsigned long v;
-  int n;
-  if(maxlen > 0)
+  for(;;)
   {
-    for(n=maxlen;;)
-    {
-      if(*in==0 || *in == '=') break;
-      v  = decode_minibyte(*in++) << 18;
-      if(*in==0 || *in == '=') break;
-      v |= decode_minibyte(*in++) << 12;
-      *out++ = (v >> 16) & 0xff;
-      if(--n == 0) break;
+    if(*in==0 || *in == '=') break;
+    v  = decode_minibyte(*in++) << 18;
+    if(*in==0 || *in == '=') break;
+    v |= decode_minibyte(*in++) << 12;
+    *out++ = (v >> 16) & 0xff;
+    if(--n == 0) break;
 
-      if(*in==0 || *in == '=') break;
-      v |= decode_minibyte(*in++) <<  6;
-      *out++ = (v >> 8) & 0xff;
-      if(--n == 0) break;
+    if(*in==0 || *in == '=') break;
+    v |= decode_minibyte(*in++) <<  6;
+    *out++ = (v >> 8) & 0xff;
+    if(--n == 0) break;
 
-      if(*in==0 || *in == '=') break;
-      v |= decode_minibyte(*in++);
-      *out++ = v & 0xff;
-      if(--n == 0) break;
-    }
+    if(*in==0 || *in == '=') break;
+    v |= decode_minibyte(*in++);
+    *out++ = v & 0xff;
+    if(--n == 0) break;
   }
   *out = 0;
 }
@@ -591,17 +598,20 @@ void drop_headers(void)
   hdr_end = 0;
 }
 
+// returns 1 if OK // updated 13.02.2015 - exact length checks
 int check_user_access(char *user, char *pass)
 {
   unsigned n;
   n = sys_setup.uname[0];
   if(n == 0xFF) return 1;
+  if(n != strlen(user)) return 0;
   if(n > 16) n=16;
-  if(memcmp((unsigned char*)sys_setup.uname+1, (void*)user, n) != 0) return 0;
+  if(memcmp(sys_setup.uname+1, user, n) != 0) return 0;
   n = sys_setup.passwd[0];
   if(n == 0xFF) return 1;
+  if(n != strlen(pass)) return 0;
   if(n > 16) n=16;
-  if(memcmp((unsigned char*)sys_setup.passwd+1, (void*)pass, n) != 0) return 0;
+  if(memcmp(sys_setup.passwd+1, pass, n) != 0) return 0;
   return 1;
 }
 
@@ -669,7 +679,9 @@ int http_parse_headers()
   end = util_skip_not_lws(cre, end); //  LWS = [CRLF] 1*( SP | HT )
 
   char userpass[36], *pass;
-  base64_decode(cre, userpass, end - cre);
+  unsigned b64len = end - cre;
+  if(b64len > 44) return 401; // limit to 11 letter groups of 4 => up to 33 decoded chars // 13.02.2015
+  base64_decode(cre, userpass, sizeof userpass);
 
   for(pass=userpass; *pass!=':'; ++pass) // scan to passwd
     if(*pass == 0) return 401;
@@ -845,47 +857,25 @@ void http_post_data(unsigned char *data, unsigned len)
 
 int pdata_pstring(char *dest, char *name, unsigned char *pstr)
 {
-  char *d = dest;
-  unsigned char c;
-  d += sprintf(d, "%s:", name);
-  *d++='"';
-  // escape quotes
-  int len = *pstr;
-#ifdef DNS_MODULE
-  if(len > 62) len = 62; // LBS 3.06.2013, pstring up to 62 chars (dns hostnames)
-#else
-  if(len > 30) len = 30; // max labels are 30 chars
-#endif
-  for(int n=1;n<=len;++n)
-  {
-    c = pstr[n];
-    if(c == '"') *d++ = '\\'; // escape quote char
-    *d++ = c;
-  }
-  *d++ = '"';
-  *d++ = ',';
-  *d = 0;
-  return d-dest;
+  char c_buf[64];
+  str_pasc_to_zeroterm(pstr, (void*)c_buf, sizeof c_buf); // not all strings in web interface are 'pzt' strings, it may be pure p-string
+  return pdata_cstring(dest, name, c_buf);
 }
 
 int pdata_cstring(char *dest, char *name, char *cstr)
 {
-  char *d = dest;
-  unsigned char c;
-  d += sprintf(d, "%s:", name);
-  *d++='"';
-  // escape quotes
-  int len = strlen(cstr);
-  for(int n=0;n<len;++n)
-  {
-    c = cstr[n];
-    if(c == '"') *d++ = '\\'; // escape quote char
-    *d++ = c;
-  }
-  *d++ = '"';
-  *d++ = ',';
-  *d = 0;
-  return d-dest;
+  char escaped_buf[80];
+  str_escape_for_js_string(escaped_buf, cstr, sizeof escaped_buf);
+  return sprintf(dest, "%s:\"%s\",", name, escaped_buf);
+}
+
+int pdata_ow_addr(char *dest, char *name, unsigned char *owa)
+{
+  if(owa[0] != 0)
+    return sprintf(dest, "ow_addr:\"%02x%02x %02x%02x %02x%02x %02x%02x\",",
+              owa[0], owa[1], owa[2], owa[3], owa[4], owa[5], owa[6], owa[7]);
+  else
+    return sprintf(dest, "ow_addr:\"\",");
 }
 
 int pdata_ip(char *dest, char *name, unsigned char *ip)

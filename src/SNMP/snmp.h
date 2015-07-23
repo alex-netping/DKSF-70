@@ -71,6 +71,12 @@
 v2.22-70
 15.05.2014
   notify module support
+v2.23-70
+29.05.2015
+  check_community() bugfix (it was length truncation before compare)
+v2.24-70
+29.06.2015
+ snmp_create_trap_v2(), use of valid_ip() in snmp_send_trap()
 */
 
 #include "platform_setup.h"
@@ -79,7 +85,7 @@ v2.22-70
 ///Версия модуля
 #define  SNMP_VER	2
 ///Сборка модуля
-#define  SNMP_BUILD	22
+#define  SNMP_BUILD	23
 
 
 //---------------- Раздел, где будут определяться константы модуля -------------------------
@@ -160,11 +166,12 @@ __no_init extern struct snmp_data_s snmp_data;
 void snmp_init(void);
 void snmp_exec(void);
 void snmp_create_trap(unsigned char *enterprise);
+void snmp_create_trap_v2(unsigned snmp_trap_oid_value_len, unsigned char *snmp_trap_oid_value);
 
 /*! Процедура добавляет ASN1  в созданный SNMP trap пакет
 * Прим: Код процедуры генериться если установлен флажок SNMP_TRAP_SUPPORT
 \param type - тип объекта. Может быть :
-   SNMP_TYPE_BOOLEAN	
+   SNMP_TYPE_BOOLEAN
    SNMP_TYPE_INTEGER
    SNMP_TYPE_BIT_STRING
    SNMP_TYPE_OCTET_STRING

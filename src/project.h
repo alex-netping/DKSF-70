@@ -74,7 +74,7 @@ void phy_reset_line_set(void);
 ////////////////////// HW detect /////////////////////////////////////////
 
 extern unsigned char proj_hardware_model;
-extern unsigned short gsm_model;
+extern unsigned short proj_gsm_model;
 unsigned proj_hardware_detect(void);
 
 ///////////////////////// relay //////////////////////////////////////////

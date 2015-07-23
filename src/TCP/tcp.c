@@ -872,7 +872,6 @@ void tcp_clear_connection(int sock_n)
 {
   if(sock_n >= TCP_MAX_SOCKETS) return;
   rexmit_purge(sock_n);
-  tcp_socket[sock_n].tcp_state = TCP_LISTEN;
   tcp_socket[sock_n].tcp_state = (sock_n == sse_sock) ? TCP_RESERVED : TCP_LISTEN;
 #ifdef HTTP_MODULE
   // it's THE HACK! // 24.03.2011
@@ -894,7 +893,7 @@ void tcp_timer_10ms(void)
 
 void tcp_send_flags(uword flags, uword socket)
 {
-  unsigned pkt = tcp_create_packet(socket);
+  unsigned pkt = tcp_create_packet_sized(socket, 256); // 20.05.2015
   if(pkt == 0xff) return;
   tcp_head_tx.flags = flags;
   tcp_put_tx_head(pkt);

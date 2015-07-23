@@ -51,13 +51,24 @@ void systick_init(void)
     | 1<<0; // enable count
 }
 
-
 void  main(void)
 {
   __disable_interrupt();
   VTOR = 0x1000;  // remap vectors to firmware image
   wdt_on();
   wdt_reset();
+
+#if PROJECT_MODEL == 48
+  if( (RSID & (1<<4|1<<2)) // intentional reboot by firmware or WDT reset
+  && bootldr_data.relay_state == (bootldr_data.relay_state_xor ^ RELAY_XOR) // persistance data is valid
+  && T1TC == 0 && T1PC < 15000 ) // time from reboot less than 1.25ms // board depandant! see T1 init in bootloader!
+  {
+    relay_pin_restore(bootldr_data.relay_state); // quick restore of relay pin state
+    relay_pin_init(); // enable gpio outputs (empty)
+  }
+  RSID = 0x3f; // clear RSID
+#endif
+
   main_reboot = 0;
   main_reload = 0;
   led_pin_init(); // init LED pins
@@ -85,51 +96,7 @@ void  main(void)
   }
   sys_init(); // prepare sys_setup
 
-  /*********************
-/// test 5
-#warning "correct version in plathorm_setup!"
-#warning "remove debuggggg"
-#define LED 4,25
-  pindir(LED, 1);
-  for(;;)
-  {
-    pinset(LED);
-    for(int i=0;i<4000000;++i);
-    pinclr(LED);
-    for(int i=0;i<1000000;++i);
-  }
-************/
-/*
-/// test 18
-#warning "correct version in plathorm_setup!"
-#warning "remove debuggggg"
-  // check periph. clock
-#define LED 4,25
-  pindir(LED, 1);
-  for(;;)
-  {
-    pinset(LED);
-    delay_us(1000); // 5000 us = 5ms = 200Hz
-    pinclr(LED);
-    delay_us(4000);
-  }
-*/
-/*
-  ///// test 19,20 (SCL,SDA)
-#warning "remove debuggggg"
-  // check periph. clock
-//#define SDA 4,20
-  swi2c_init_pin();
-  for(;;)
-  {
-    swi2c_sda(0,1);
-    delay_us(2);
-    delay_us(2);
-    swi2c_sda(0,0);
-    delay_us(4);
-  }
-*/
-  // special service version, clear EEPROM completely (32kb)
+  // special service version, clear EEPROM completely (64kb)
 #if PROJECT_CHAR=='W'
   unsigned char buf[255];
   util_fill(buf, sizeof buf, 0xff);
@@ -140,34 +107,6 @@ void  main(void)
 
   init_modules(); // init modules, prepare hw, install ISRs etc.
   systick_init();
-
-/*****
-/// test 6
-#warning "correct version in plathorm_setup!"
-#warning "remove debuggggg"
-#define LED 4,25
-  pindir(LED, 1);
-  for(;;)
-  {
-    pinset(LED);
-    for(int i=0;i<4000000;++i);
-    pinclr(LED);
-    for(int i=0;i<4000000;++i);
-  }
-****/
-
-/*
-#warning remove debugggg - scl rate test
-for(;;)
-{
-  swi2c_scl(0,1);
-  delay_us(2);
-  swi2c_scl(0,0);
-  delay_us(1);
-  delay_us(1);
-}
-*/
-
   __enable_interrupt();
   log_enable_syslog = 1; // now network modules is functional, enable syslog
   // now LED module is init-ed ...
@@ -176,28 +115,14 @@ for(;;)
     led_generation(250, 250, 10); // signal 'parameter reset'
   else
     led_generation(100, 100, 3);  // signal 'firmware start'
-
   /// main loop ////
   while(1)
   {
     wdt_reset();
-    if(main_reboot) reboot_proc();
+    //if(main_reboot) reboot_proc();
+    if(main_reboot) soft_reboot();
     if(main_reload) reload_proc();
     system_event(E_EXEC, 0);
-/*
-#warning "remove debug test 24"
-#define LED202 4,25
-pindir(LED202,1);
-swi2c_sda(0, 0);
-delay(1);
-swi2c_sda(0, 1);
-delay_us(3);
-int d = swi2c_sda_in(0);
-pinwrite(LED202, d);
-swi2c_sda(0, 1);
-delay_us(30);
-*/
-
   }
 } // main()
 

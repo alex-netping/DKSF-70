@@ -119,6 +119,19 @@ v2.23-70
 v2.23-48
 24.12.2014
   alternative rewrite of io_snmp_set() for npIoPulseCounter bugfix
+v2.24-48
+25.03.2015
+  io.cgi?io1=2 implementation
+  sys_setup.nf_disable check in io_send_notification()
+v2.25-52/201/202
+19.02.2015
+  in io_exec(), logic of if..else.. fixed in trap sending w/o notify.c
+v2.26-60
+10.04.2015
+  level legend in io trap
+v2.27-70
+17.06.2015
+  io_http_get_cgi() ?io1=2 removed completely
 */
 
 
@@ -146,7 +159,7 @@ void io_extender_init(void);
 void io_restart(void);
 
 unsigned char io_switch_direction = 0;
-unsigned io_registered_state;
+///unsigned io_registered_state;
 char io_send_sse_flag;
 
 void io_send_trap(int ch);
@@ -280,7 +293,7 @@ unsigned io_http_set_single_pulse(void)
     io_start_pulse(data.ch);
   }
   //// http_redirect("/io.html");
-  http_reply(200, ""); // in 48/52/201/202 html used XHR, not submit
+  http_reply(200, ""); // in 48/52/60/201/202 html used XHR, not submit
   return 0;
 }
 
@@ -302,21 +315,34 @@ unsigned io_http_get_cgi(unsigned pkt, unsigned more_data)
   }
   else
   {
-    if(*p++ != '=') goto end;
-    char m = *p++;
-    if     (m == '0') io_set_line(ch, 0);
-    else if(m == '1') io_set_line(ch, 1);
-    else if(m == 'f')
+    if(*p == '=')
     {
-      if(*p == 0) io_set_line(ch, !io_setup[ch].level_out);
-      else if(*p == ',')
+      ++p;
+      char m = *p++;
+      if     (m == '0') io_set_line(ch, 0);
+      else if(m == '1') io_set_line(ch, 1);
+      else if(m == 'f')
       {
-        unsigned t;
-        t = atoi(p + 1); // skip ,
-        if(t == 0 || t > 1800) goto end;
-        io_start_pulse_ms(ch, t * 1000);
+        if(*p == 0) io_set_line(ch, !io_setup[ch].level_out);
+        else if(*p == ',')
+        {
+          unsigned t;
+          t = atoi(p + 1); // skip ,
+          if(t == 0 || t > 1800) goto end;
+          io_start_pulse_ms(ch, t * 1000);
+        }
+        else goto end;
       }
-      else goto end;
+      else goto end; // 17.06.2015
+    }
+    else if(memcmp(p, "&mode=", 6) == 0)
+    {
+      p += 6; // skip &mode=
+      char m = *p++;
+      if(m < '0' || m > '2' || *p != 0) goto end;
+      if(ch > 3 && m == '2') goto end; // Logic out possible for IO 1..4
+      io_setup[ch].direction = m - '0';
+      io_switch_direction = 1;
     }
     else goto end;
     strcpy(result, "io_result('ok');");
@@ -420,9 +446,10 @@ void io_log(int ch)
 
 void io_send_notification(unsigned ch)
 {
-#ifdef NOTIFY_MODULE
+  // if(sys_setup.nf_disable) return; // 25.03.2015 // 2.06.2015
   if(ch >= IO_MAX_CHANNEL) return;
   unsigned lvl = io_state[ch].level_filtered;
+#ifdef NOTIFY_MODULE
   struct binary_notify_s *ionf = &io_notify[ch];
   unsigned mask = lvl ? ionf->high : ionf->low;
   notify(mask, "IO%u=%u %s %s",
@@ -452,11 +479,13 @@ void io_send_notification(unsigned ch)
 #endif // NOTIFY_MODULE
 }
 
+/*
 void io_register_state(unsigned ch, int state) // from 22.12.2014 must be used for 'reboot persistance' needs
 {
   if(state) io_registered_state |=  (1U<<ch);
   else      io_registered_state &=~ (1U<<ch);
 }
+*/
 
 unsigned io_get_state_bitmap(void) // 22.12.2014
 {
@@ -496,7 +525,7 @@ void io_exec(void)
         io_send_sse_flag = 1;
         io_send_notification(io_ch_n);
       }
-      io_register_state(io_ch_n, output);
+      ///io_register_state(io_ch_n, output);
     }
     else
     { // input
@@ -516,13 +545,13 @@ void io_exec(void)
         if(io->level_filtered != io->level_in)
         {
           io->level_filtered = io->level_in; // drop event!
-          io_register_state(io_ch_n, io->level_filtered);
+          ///io_register_state(io_ch_n, io->level_filtered);
           io_send_sse_flag = 1;
           if(io->level_filtered != 0) ++ io->pulse_counter;
           io_send_notification(io_ch_n);
         }
       }
-      io_register_state(io_ch_n, io->level_filtered); // returned as is 14.11.2014
+      ///io_register_state(io_ch_n, io->level_filtered); // returned as is 14.11.2014
     } // if
   } // for io ch
 #if PROJECT_MODEL == 60 || PROJECT_MODEL == 70 || PROJECT_MODEL == 71
@@ -606,7 +635,6 @@ int io_snmp_get(unsigned id, unsigned char *data)
 int io_snmp_set(unsigned id, unsigned char *data)
 {
   int val = 0;
-  unsigned uval = 0;
   unsigned char t;
 
   unsigned ch = snmp_data.index - 1;
@@ -622,7 +650,7 @@ int io_snmp_set(unsigned id, unsigned char *data)
     snmp_add_asn_integer(val);
     break;
   case 0x8990: // npIoPulseCounter
-    if(*data == SNMP_TYPE_INTEGER)
+    if(*data == SNMP_TYPE_INTEGER) // legacy compatibility
     {
       asn_get_integer(data, &val);
       if(val != 0) return SNMP_ERR_BAD_VALUE;
@@ -710,12 +738,20 @@ void io_make_trap(int ch)
   snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING,
     setup->name[0], setup->name+1);
   snmp_close_seq(seq_ptr);
+
+#ifdef NOTIFY_MODULE
+  seq_ptr = snmp_add_seq();    // npIoTrapLevelLegend
+  io_trap_data_oid[sizeof io_trap_data_oid - 2] = 7;
+  snmp_add_asn_obj(SNMP_OBJ_ID, sizeof io_trap_data_oid, io_trap_data_oid);
+  unsigned char *pstr = io->level_filtered ? io_notify[ch].legend_high : io_notify[ch].legend_low;
+  snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING, pstr[0], pstr + 1);
+  snmp_close_seq(seq_ptr);
+#endif
+
   // LBS 7.02.2011 DKSF253
 #if PROJECT_MODEL==53 || PROJECT_MODEL==253
   for(int i=0; i<IO_MAX_CHANNEL; ++i)
-  {
     io_add_vbind_integer(21+i, io_state[i].level_filtered);  // npIoTralLevelIn i
-  }
 #endif
 }
 
@@ -830,4 +866,3 @@ void io_event(enum event_e event)
 }
 
 #endif // IO_MODULE
-

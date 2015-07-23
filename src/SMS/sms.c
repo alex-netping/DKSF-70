@@ -52,9 +52,25 @@ v1.15-54
 v1.16-54 (testing for 201 on dkst51.1.9)
 12.11.2014
   using at+cmgd=1,4 instead of scanning sms purge during init for SIM900
+v1.17-200
+10.01.2015
+  voltage request via modem
 v1.17-201
 29.01.2015
   enchanced modem Init sequence, deleted /r, ESCs from init strings, big ATs only for SIM900
+v1.18-201
+24.02.2015
+  Rewrite to use +CMGS to send SMS immediately, w/o writing to memory then multiple sending
+  SIM900 Call Ready polling before start
+v1.20-200
+26.02.2015
+  rewrite of emergency halt; rewrite of Vbat; sms_at_debug_start()
+v2.1-707
+22.08.2014
+  use of str_escape_for_js_string() in USSD processing
+v2.2-707
+13.01.2015
+  UCS2 sms messages; sm length limited to 70 chars
 */
 
 #include "platform_setup.h"
@@ -104,7 +120,7 @@ char gsm_shutdown_req; // request to shut down if modem is busy now
 unsigned short gsm_shutdown_timer; // 10ms tick, delay 1s from URC '^SHUTDOWN' to power down state,
 // or 10s delay if module is halted by sms_emergency_halt flag
 
-char sms_tx_buf[256];
+char sms_tx_buf[384]; // 256->384 for UCS2
 unsigned sms_tx_idx;
 
 char sms_rx_buf[512];
@@ -138,14 +154,12 @@ unsigned char sms_emergency_halt = 0; // Very Bad Error flag, halt, don't restar
 
 #define SMS_IDX_QUEUE_LEN 20
 #define SMS_Q_LEN 16
-#define SMS_Q_MSG_LEN 160
+#define SMS_Q_MSG_LEN 72 // for UCS2 messages 160->70+zt // 13.01.2015
 
 char sms_tx_queue[SMS_Q_LEN][SMS_Q_MSG_LEN];
 char sms_tx_tel_queue[SMS_Q_LEN][16];   // telephone number to respond or 0 if unsolicited notification
 char sms_rx_queue[SMS_IDX_QUEUE_LEN];   // indeces of received sms in modem's SMS memory
 char sms_del_queue[SMS_IDX_QUEUE_LEN];  // indeces of delete candidates in modem's SMS memory
-
-char single_dest_phone[16];             // contains caller phone number while sending respond sms (copied from head of tx queue)
 
 unsigned sms_msg_serial_num;            // serial of sent unsolicited sms for device lifecycle  (stored in eeeprom, two page-size buffers)
 
@@ -171,7 +185,7 @@ int sms_limit_counter = SMS_LIMIT_THRESHOLD;
 //static const char init_sequence_zero[] = "\r\r\r\rATE0\r";  // let's believe flow control=default off for internal modem (MC52 and SIM900)
 static const char init_sequence_zero[] = "ATE0\r";
 //static const char init_sequence_one[] = "\rAT+CMGF=1;+CNMI=1,1\r";
-static const char init_sequence_one[] = "AT+CMGF=1;+CNMI=1,1\r";
+static const char init_sequence_one[] = "AT+CMGF=1;+CSCS=\"UCS2\";+CSMP=17,167,0,8;+CNMI=1,1\r"; // +csmp - UCS2 coding for outgoing SMS
 static const char smso_52[] = "\x1b""AT^smso\r"; // MC52i // for SIM900 it's anothe cmd, and another URC - TODO // used with battery power
 static const char smso_900[] = "AT+cpowd=1\r"; // SIM900 normal power down
 static char *smso = "AT\r";
@@ -179,7 +193,7 @@ static char *smso = "AT\r";
 short int receive_idx;             // index of sms for moving from read to delete queue after read is completed
 short int send_idx;                // index of sms for moving to del queue after sms sending is completed
 short int sms_purge_idx;           // index of sms in modem memory for purge at startup
-unsigned char phone_idx;           // index of currenth dest phone number while sending sms, currently 0 or 1
+unsigned char next_phone_idx;      // index of currenth dest phone number while sending sms, currently 0 or 1
 
 enum sms_state_e
 {
@@ -193,18 +207,18 @@ enum sms_state_e
   SMS_INIT_0,
   SMS_INIT_1,
   SMS_INIT_2,
+  SMS_INIT_READY_CHECK_START,
+  SMS_INIT_READY_CHECK,
   SMS_INIT_3,
   SMS_INIT_PURGE,
   SMS_IDLE,
   SMS_BUSY_READ,
   SMS_BUSY_SEND,
   SMS_BUSY_GET_INFO,
+  SMS_BUSY_ASK_VBAT,
   SMS_BUSY_USSD,
-  SMS_CHECK_SEND_ERR,
   SMS_PURGE,
-  SMS_DEBUG_1,
-  SMS_DEBUG_2,
-  SMS_DEBUG_3,
+  SMS_BUSY_DISABLING_TX,
   SMS_SHUTDOWN_STARTED
 } sms_state;
 
@@ -215,7 +229,9 @@ static int final_code_error(void);
 void delete_sms(int idx);
 void send_sms(unsigned char *phone);
 void sms_state_watchdog(void);
-
+int sms_check_sending_limit(void);
+void start_sending_sms(char *dest_phone);
+void send_printf(char *fmt, ... );
 
 #ifndef UART_MODULE
 
@@ -254,12 +270,13 @@ void UART1_IRQHandler(void)
 
 #endif // ndef UART_MODULE
 
-
-
 void sms_halt_module(void)
 {
   sms_emergency_halt = 1;
-  gsm_emeroff(0);
+#warning Vbat via SIM900, partial halt v2
+  ///// gsm_emeroff(0);
+  sms_state = SMS_IDLE;
+  //
 #if PROJECT_CHAR == 'E'
   log_printf("SMS function is stopped. Unrecoverable error!");
 #else
@@ -321,7 +338,7 @@ void sms_uart_exec(void)
     sms_rx_buf[sms_rx_idx] = 0; // zterm
 
     // log errors and debug - moved from parse, 4.01.2013
-    if((sms_setup.flags & SMS_DEBUG_LOG) && sms_rx_idx_debug < sms_rx_idx)
+    if((sms_setup.flags & SMS_DEBUG_LOG) && sms_rx_idx_debug < sms_rx_idx )
     {
       log_printf("modem [%d]: '%s'", sms_state, sms_rx_buf + sms_rx_idx_debug);
       sms_rx_idx_debug = sms_rx_idx;
@@ -332,7 +349,7 @@ void sms_uart_exec(void)
     ||  strcmp(sms_rx_buf, "\r\n> ") == 0
     || (memcmp(sms_rx_buf, "\r\n+C", 4) == 0 && sms_rx_buf[sms_rx_idx - 1] == '\n')
     ||  final_code_error()
-    || (sms_state == SMS_SHUTDOWN_STARTED && contains("^SHUTDOWN\r") ) )
+    || (sms_state == SMS_SHUTDOWN_STARTED && (contains("^SHUTDOWN\r") || contains("NORMAL POWER DOWN")) ) )
       wait_more = 0;
 
     if(wait_more && wait_more_counter)
@@ -469,14 +486,6 @@ void sms_uart_rx_parse()
   int sms_idx;
   char *tel, *cmd, *s, *z;
 
-  /* moved to sms_uart_exec()
-  // log errors and debug
-  if(sms_setup.flags & SMS_DEBUG_LOG)
-  {
-    log_printf("modem [%d]: '%s'", sms_state, sms_rx_buf);
-  }
-  */
-
   if(match("+CME ERROR: SIM blocked") // try repeat // 10.01.2015
   || match("+CME ERROR: SIM busy")
   || match("+CMS ERROR: SIM busy") )
@@ -514,9 +523,21 @@ void sms_uart_rx_parse()
   // process debug request
   if(sms_at_debug)
   {
-    memcpy(sms_rx_at_debug_buf, sms_rx_buf, sizeof sms_rx_at_debug_buf);
-    sms_rx_at_debug_buf[sizeof sms_rx_at_debug_buf - 1] = 0;
-    sms_at_debug = 0; // LBS 22.02.2011
+#if defined(TELNET_MODULE)
+    if(tcp_socket[telnet_socket].tcp_state == TCP_ESTABLISHED)
+    {
+      sms_rx_buf[sizeof sms_rx_buf - 10] = 0;
+      if(sms_at_debug == 2)
+        tn_printf("%s", sms_rx_buf); // permanent processing after GSM TERMINAL telnet command
+      else
+        tn_printf("\r\n\r\n%s\r\n\r\n>", sms_rx_buf); // reply to GSM AT... telnet command
+      tn_send();
+    }
+    else
+      sms_at_debug = 0; // stop sending
+#endif
+    strlcpy(sms_rx_at_debug_buf, sms_rx_buf, sizeof sms_rx_at_debug_buf); // store reply for later acces by web interface
+    if(sms_at_debug == 1) sms_at_debug = 0; // clear if single-shot GSM AT...
     return;
   }
   // at command completition reached, process pending shutdown request
@@ -527,22 +548,52 @@ void sms_uart_rx_parse()
     send_printf((void*)smso);
     return;
   }
-  // process Unsolocited Result Codes
+  // process Unsolicited Result Codes
   if(match("+CMTI: "))
   {
     sms_idx = atoi(sms_rx_buf + 14); // \r\n+CMTI: "ME", nn - read nn
     //enqueue(sms_rx_queue, sms_idx);
     enqueue(sms_emergency_halt == 0 ? sms_rx_queue : sms_del_queue, sms_idx);
   }
-  else // process modem reply according to SMS engine state
+
+  // independent of sms_emergency_halt
+
+  if(sms_state == SMS_BUSY_DISABLING_TX)
+  {
+    sms_state = SMS_IDLE;
+    return;
+  }
+
+  if(sms_state == SMS_BUSY_ASK_VBAT)
+  {
+    if(match("+CBC: "))
+    {
+#ifdef BATTERY_MODULE
+      unsigned v;
+      char *p = sms_rx_buf + 6;
+      while(*p && *p != ',') ++p;
+      if(*p) ++p;
+      while(*p && *p != ',') ++p;
+      if(*p) v = atoi(++p);
+      if(v) battery_voltage_mv = v;
+#endif
+    }
+    sms_state = SMS_IDLE;
+    return;
+  }
+
+  if(sms_state == SMS_SHUTDOWN_STARTED)
+  {
+    if(contains("^SHUTDOWN") || contains("NORMAL POWER DOWN"))
+      gsm_shutdown_timer = 100 + 1; // 10ms tick
+    return;
+  }
+
+  if(sms_emergency_halt) return;
+
+  // process modem reply according to SMS engine state
   switch(sms_state)
   {
-  case SMS_SHUTDOWN_STARTED:
-    if(contains("^SHUTDOWN") || contains("NORMAL POWER DOWN"))
-    {
-      gsm_shutdown_timer = 100 + 1; // 10ms tick
-    }
-    break;
   case SMS_IGT_CFUN:
     if(final_code_ok()) // check answer on repeating 'ESC at CR'
     {
@@ -557,8 +608,8 @@ void sms_uart_rx_parse()
   case SMS_INIT_0: // check modem responding via com
     if(final_code_ok()) // ... untill it will be responded with OK
     {
-      ignition_timer = 0; // stop querying
-      send_printf( gsm_model == 52 ? "AT^sm20=1,0\r" : "AT\r"); // ext.error reporting // only for MC52i, SIM900 and other - dummy big AT for autobaud
+      ignition_timer = (unsigned short)~0U; // now it is required ~0U to stop repeats in startup_sequence()
+      send_printf( proj_gsm_model == 52 ? "AT^sm20=1,0\r" : "AT\r"); // ext.error reporting // only for MC52i, SIM900 and other - dummy big AT for autobaud
       sms_state = SMS_INIT_1;
     }
     else
@@ -572,12 +623,33 @@ void sms_uart_rx_parse()
     break;
   case SMS_INIT_2:
     send_printf((char*)init_sequence_one); // send init string
-    sms_state = SMS_INIT_3;
+    sms_state = proj_gsm_model == 52 ? SMS_INIT_3 : SMS_INIT_READY_CHECK_START;
     break;
+  case SMS_INIT_READY_CHECK_START: // SIM900
+    if(final_code_ok())
+    {
+      send_printf("AT+CCALR?\r");
+      sms_state = SMS_INIT_READY_CHECK;
+    }
+    else
+      log_printf("GSM init error");
+    break;
+  case SMS_INIT_READY_CHECK: // SIM900
+    if(match("+CCALR: 1") == 0)
+    {
+      ignition_timer = 400; // 10ms // repeat AT+CCALR in startup_sequence() via ignition_timer
+      break;
+    }
+    else
+    {
+      ignition_timer = (unsigned short)~0U; // stop repeats
+      sms_state = SMS_INIT_3;
+    }
+    // проваливаемся
   case SMS_INIT_3:
     if(final_code_ok())
     {
-      if(gsm_model == 52)
+      if(proj_gsm_model == 52)
       { // MC52i
         sms_purge_idx = 1;
         delete_sms(sms_purge_idx);
@@ -621,6 +693,8 @@ void sms_uart_rx_parse()
       for(z = tel; *z && *z!='"'; ++z) {} // scan to " at the end of tel. number
       if(*z == 0) { sms_state = SMS_IDLE; break; } // rotten input, no " after number
       *z++ = 0; // skip " and zterm src teleph number
+      char decoded_ph[64]; // 13.01.2015
+      ucs2_to_win1251(tel, decoded_ph, sizeof decoded_ph);
 
       // skip to command body after LF, trim remainder of input
       for(z = z; *z && *z!='\n'; ++z) {} // scan to LF at the end of 1st line of URC
@@ -628,8 +702,12 @@ void sms_uart_rx_parse()
       cmd = z + 1; // skip this LF
       for(z = cmd; *z && *z!='\r'; ++z) {} // scan to CR at the end of sms body
       *z = 0; // z-term
+      char decoded_msg[284]; // 13.01.2015
+      ucs2_to_win1251(cmd, decoded_msg, sizeof decoded_msg);
+      if(sms_setup.flags & SMS_DEBUG_LOG)
+        log_printf("SMS Rx UCS2 to W1251: '%s'", decoded_msg);
 
-      sms_parse_command(cmd, tel);
+      sms_parse_command(decoded_msg, decoded_ph);
       enqueue(sms_del_queue, receive_idx);
       receive_idx = 0;
       sms_state = SMS_IDLE;
@@ -638,18 +716,36 @@ void sms_uart_rx_parse()
   case SMS_BUSY_SEND:
     if(match("> "))
     {
-      // pop first sms from queue
       sms_tx_queue[0][sizeof(sms_tx_queue[0])-1] = 0; // safe z-term
-      send_printf("%s\x1a", sms_tx_queue[0]); // type sms body and Ctrl-Z
-      strlcpy(single_dest_phone, sms_tx_tel_queue[0], sizeof single_dest_phone);
-      sms_q_advance(); // remove message from RAM queue
+      char buf[70 * 4 + 1]; // 13.01.2015, UCS2 messages
+      win1251_to_ucs2(sms_tx_queue[0], buf, sizeof buf);
+      if(sms_setup.flags & SMS_DEBUG_LOG)
+        log_printf("SMS Tx W1251 to UCS2: '%s'", sms_tx_queue[0]);
+      send_printf("%s\x1a", buf); // type sms body and Ctrl-Z
+      return;
     }
     else
-    if(match("+CMGW: "))
-    { // get index of writed sms, send it
-      send_idx = atoi(sms_rx_buf + 8); // \r\n+CMGW: nnn, get nnn, atoi() skips leading space
-      phone_idx = 0; // now starting value 0 // 5.02.2014
-      goto start_sending_sms; // the same code for first and over phone numbers
+    if( match("ERROR") || match("+CMS ERROR: ") ||  match("+CME ERROR: ") )
+    {
+#if PROJECT_CHAR == 'E'
+      log_printf("SMS sending not completed, error");
+#else
+      log_printf("SMS сбой отправки");
+#endif
+    }
+    // send to the next ph number
+    if(next_phone_idx == 0 // responce to the single calling phone, no others
+    || next_phone_idx == MAX_DEST_PHONE // sent to all of MAX_DEST_PHONE
+    || sms_setup.dest_phone[next_phone_idx][0] == 0 // no more phones left
+    || sms_check_sending_limit() ) // too frequent sending
+    {
+      sms_q_advance(); // drop message
+      sms_state = SMS_IDLE;
+    }
+    else
+    {
+      start_sending_sms((char*)(sms_setup.dest_phone[next_phone_idx] + 1)); // pzt string
+      ++ next_phone_idx;
     }
     break;
   case SMS_BUSY_GET_INFO:
@@ -678,58 +774,6 @@ void sms_uart_rx_parse()
       sms_state = SMS_IDLE;
     }
     break;
-  case SMS_CHECK_SEND_ERR:
-    if( match("ERROR") || match("+CMS ERROR: ") ||  match("+CME ERROR: ") )
-    {
-#if PROJECT_CHAR == 'E'
-      log_printf("SMS sending not completed, error");
-#else
-      log_printf("SMS сбой отправки");
-#endif
-    }
-
-  start_sending_sms:
-
-    if(single_dest_phone[0] != 0)
-    { // send to caller
-      if(phone_idx == 0 && sms_emergency_halt == 0) // initial val = 0
-      { // send
-        ++phone_idx;
-        send_sms((unsigned char*)single_dest_phone);
-        sms_state = SMS_CHECK_SEND_ERR;
-      }
-      else
-      { // delete
-        enqueue(sms_del_queue, send_idx); // sms was sent to all dest phones, move it to delete queue
-        send_idx = 0;
-        sms_state = SMS_IDLE;
-      }
-    }
-    else
-    { // send to pre-programmed phones
-      for(; phone_idx < MAX_DEST_PHONE; ++phone_idx)
-        if(sms_setup.dest_phone[phone_idx][0] != 0)
-          break; // find not empty phone
-      if(phone_idx < MAX_DEST_PHONE && sms_emergency_halt == 0)
-      { // send to this dest phone number
-        sms_setup.dest_phone[phone_idx][15] = 0; // zterm protection, pasc-zterm string
-//// #warning remove debugggggggggggggg
-        send_sms(sms_setup.dest_phone[phone_idx] + 1);
-        /*
-log_printf("debugggggg: sending smsto %s", sms_setup.dest_phone[phone_idx]);
-send_printf("AT\r");
-        */
-        ++ phone_idx;
-        sms_state = SMS_CHECK_SEND_ERR;
-      }
-      else
-      { // all dest phones processed, clear message
-        enqueue(sms_del_queue, send_idx); // sms was sent to all dest phones, move it to delete queue
-        send_idx = 0;
-        sms_state = SMS_IDLE;
-      }
-    }
-    break;
   case SMS_PURGE:
     sms_state = SMS_IDLE;
     break;
@@ -753,9 +797,10 @@ void sms_msg_printf(char *fmt, ...)
   str_pasc_to_zeroterm(sys_setup.hostname, name, sizeof name);
   sprintf(msg, "%s (%u) ",
       name[0] ? name : "NETPING",
-      sms_msg_serial_num);
+      sms_msg_serial_num % 1000);
   vsprintf(msg + strlen(msg), fmt, args);
-  msg[159] = 0; // limit sms length
+  //msg[160-1] = 0; // limit sms length
+  msg[70-1] = 0; // 28.05.2015 limit sms length ucs2
 
   if(sms_state == SMS_SHUTDOWN_STARTED
   || sms_state == SMS_STOPPED
@@ -768,19 +813,25 @@ void sms_msg_printf(char *fmt, ...)
   sms_q_text(msg, 0); // enqueue message
 }
 
-void delete_sms(int idx)
+int start_ussd_with_req(char *request)
 {
-  send_printf("AT+cmgd=%d\r", idx);
+  strcpy(sms_ussd_responce, "-");
+  if(sms_state != SMS_IDLE) return 0xff;
+  sms_state = SMS_BUSY_USSD;
+  char buf[64];
+  if(proj_gsm_model == 52)
+    strlccpy(buf, request, 0, sizeof buf);
+  else
+    win1251_to_ucs2(request, buf, sizeof buf);
+  send_printf("AT+cusd=1,\"%s\"\r", buf);
+  return 0;
 }
 
 void start_ussd(void)
 {
-  strcpy(sms_ussd_responce, "-");
   if(sms_setup.ussd_string[0] == 0 || sms_setup.ussd_string[0] == 0xff ) return;
-  if(sms_state != SMS_IDLE) return;
-  sms_state = SMS_BUSY_USSD;
-  sms_setup.ussd_string[sizeof sms_setup.ussd_string - 1] = 0;
-  send_printf("AT+cusd=1,\"%s\"\r", sms_setup.ussd_string + 1);
+  sms_setup.ussd_string[sizeof sms_setup.ussd_string - 1] = 0; // z-term prot-n
+  start_ussd_with_req(sms_setup.ussd_string + 1);
 }
 
 void ask_gsm_info(void)
@@ -794,24 +845,24 @@ void ask_gsm_info(void)
 
 void startup_sequence(void)
 {
-  static char at_1_count = 0;
+  static char repeat_count = 0;
 
-  if(sms_state > SMS_INIT_0) return;
+  if(sms_state >= SMS_IDLE) return;
   if(ignition_timer) return;
   switch(sms_state)
   {
   case SMS_START:
-    at_1_count = 0;
+    repeat_count = 0;
     // проваливаемся
   case SMS_IGT_AT:
     sms_clear_rx_buf();
     ///send_printf("\x1b""AT\r");
-    send_printf("AT\r"); // 29.01.2015 from at+cmgw, it will return OK the same as from idle, AT will be written as message and deleted during SMS_PURGE phase
+    send_printf("AT\r"); // 29.01.2015 we will ignore possible waiting of message after > prompt during at+cmgs; we'll send AT to someone, then get OK on the next AT try
     ignition_timer = 100; // 10ms tick
     sms_state = SMS_IGT_CFUN;
     break;
   case SMS_IGT_CFUN:
-    if(++at_1_count < 5)
+    if(++repeat_count < 5)
       sms_state = SMS_IGT_AT;
     else
     { // no reply on AT, forced hardware reboot or cold start
@@ -832,7 +883,7 @@ void startup_sequence(void)
     log_printf("Start of GSM modem (IGT)");
 #endif
     gsm_igt(0); // assert
-    if(gsm_model == 52)
+    if(proj_gsm_model == 52)
       ignition_timer = 20; // 10ms tick // MC52i
     else
       ignition_timer = 100; // 10ms tick  // SIM900
@@ -845,6 +896,11 @@ void startup_sequence(void)
     send_printf((char*)init_sequence_zero);
     ignition_timer = 200; // 10ms tick
     sms_state = SMS_INIT_0;
+    break;
+  case SMS_INIT_READY_CHECK:
+    // used only for SIM900
+    send_printf("AT+CCALR?\r");
+    ignition_timer = 400; // 10ms tick
     break;
   }
 }
@@ -862,23 +918,56 @@ void gsm_alive_test()
   }
 }
 
+int sms_check_sending_limit(void)
+{
+  sms_limit_counter -= SMS_LIMIT_DEC;
+  if(sms_limit_counter > 0) return 0;
+#if PROJECT_CHAR == 'E'
+  log_printf("SMS message dropped, too frequent sending (>%u per hour)", SMS_LIMIT_MSG_PER_HOUR);
+#else
+  log_printf("SMS сообщение отброшено, cлишком частая посылка (>%u в час)!", SMS_LIMIT_MSG_PER_HOUR);
+#endif
+  return 1;
+}
+
+void delete_sms(int idx)
+{
+  send_printf("AT+cmgd=%d\r", idx);
+}
+
+void start_sending_sms(char *dest_phone)
+{
+  char ucs2_ph[68]; // 13.01.2015
+  win1251_to_ucs2(dest_phone, ucs2_ph, sizeof ucs2_ph);
+  send_printf("AT+cmgs=\"%s\"\r", ucs2_ph); // start 'send sms' command
+}
+
 void sms_send_from_queue(void)
 {
   if(sms_state != SMS_IDLE) return;
   if(sms_tx_queue[0][0] == 0) return; // egressing sms queue is empty
-  int i;
-  for(i=0; i<MAX_DEST_PHONE; ++i)
-    if(sms_setup.dest_phone[i][0] != 0)
-      break;
-  if(i == MAX_DEST_PHONE && sms_tx_tel_queue[0][0] == 0)
-  { // no dest numbers to send to
-    sms_q_advance(); // remove sms from tx queue
+
+  char *ph;
+  if(sms_tx_tel_queue[0][0])
+  { // only single phone from queue (respond to calling phone)
+    ph = sms_tx_tel_queue[0];
+    next_phone_idx = 0;
   }
   else
-  {
-    sms_state = SMS_BUSY_SEND;
-    send_printf("AT+cmgw=\"000000\"\r"); // start 'write sms to memory' command
+  { // send to all ph numbers from setup
+    ph = (char*)(sms_setup.dest_phone[0] + 1); // pzt string; numbers are collated to the top of array in sms_init()
+    next_phone_idx = 1; //
   }
+
+  if(ph[0] == 0 // no any dest phone numbers in sms_setup
+  || sms_check_sending_limit() ) // too frequent sms sending
+  {
+    sms_q_advance(); // drop message
+    return;
+  }
+
+  sms_state = SMS_BUSY_SEND;
+  start_sending_sms(ph);
 }
 
 void sms_read_received_from_queue(void)
@@ -889,24 +978,6 @@ void sms_read_received_from_queue(void)
   sms_state = SMS_BUSY_READ;
   receive_idx = rx_idx;
   send_printf("AT+cmgr=%u\r", rx_idx); // request sms read
-}
-
-void send_sms(unsigned char *phone)
-{
-  sms_limit_counter -= SMS_LIMIT_DEC;
-  if(sms_limit_counter > 0)
-  {
-    send_printf("AT+cmss=%d,\"%s\"\r", send_idx, phone);
-  }
-  else
-  {
-#if PROJECT_CHAR == 'E'
-    log_printf("SMS: too many outgoing messages (>%u per hour)", SMS_LIMIT_MSG_PER_HOUR);
-#else
-    log_printf("СМС сообщения отправляются слишком часто (>%u в час)!", SMS_LIMIT_MSG_PER_HOUR);
-#endif
-    sms_halt_module();
-  }
 }
 
 void sms_purge_del_queue(void)
@@ -939,13 +1010,26 @@ void sms_resend_on_sim_busy(void)
   }
 }
 
+void sms_ask_voltage(void)
+{
+  static unsigned next_time = 0;
+  if(sys_clock_100ms < next_time) return;
+  if(sms_state != SMS_IDLE) return;
+  next_time = sys_clock_100ms + 1800;
+  send_printf("AT+CBC\r");
+  sms_state = SMS_BUSY_ASK_VBAT;
+}
+
 void sms_exec(void)
 {
+  sms_uart_exec();
+#ifdef BATTERY_MODULE
+  if(proj_hardware_detect() == 9) sms_ask_voltage();
+#endif
   if(sms_emergency_halt) return; // harakiri executed!
   sms_state_watchdog();
   // ignition_sequence();
   startup_sequence();
-  sms_uart_exec();
   sms_resend_on_sim_busy();
   gsm_alive_test();
   sms_purge_del_queue();
@@ -999,10 +1083,24 @@ void sms_reset_params_mkarta(void)
 
 #endif
 
+// remove empty entries from dest ph number array
+void sms_collate_dest_ph_numbers(void)
+{
+  char dest_phone[MAX_DEST_PHONE][16];
+  memset(dest_phone, 0, sizeof dest_phone);
+  int j = 0;
+  for(int i=0; i<MAX_DEST_PHONE; ++i)
+  {
+    if(sms_setup.dest_phone[i][0])
+      memcpy(dest_phone[j++], sms_setup.dest_phone[i], sizeof dest_phone[0]);
+  }
+  memcpy(sms_setup.dest_phone, dest_phone, sizeof sms_setup.dest_phone);
+}
+
 void sms_init(void)
 {
-  if(gsm_model == 52) smso = (char*)smso_52;
-  if(gsm_model == 900) smso = (char*)smso_900;
+  if(proj_gsm_model == 52) smso = (char*)smso_52;
+  if(proj_gsm_model == 900) smso = (char*)smso_900;
   // read setup
   unsigned sign;
   EEPROM_READ(&eeprom_sms_signature, &sign, 4);
@@ -1026,6 +1124,8 @@ void sms_init(void)
   if(a == ~0) a = 0;
   if(b == ~0) b = 0;
   sms_msg_serial_num = a > b ? a : b;
+  // collate dest. ph. numbers to the top of it's array // 19.02.2015
+  sms_collate_dest_ph_numbers();
   // hardware init
   gsm_pins_init();
   gsm_igt(1);
@@ -1048,7 +1148,7 @@ void sms_init(void)
   receive_idx = 0;
   send_idx = 0;
   sms_purge_idx = 1;
-  phone_idx = 0;
+  // next_phone_idx = 0; // not necessary
   sms_ussd_responce_ready = 0;
   // clear old outgoing messages, clear sms queues
   memset(sms_tx_queue, 0, sizeof sms_tx_queue);
@@ -1087,17 +1187,24 @@ void sms_init(void)
 #endif
 }
 
-#ifdef HTTP_MODULE
-
-unsigned sms_debug_http_set(void)
+void sms_at_debug_start(char *s)
 {
-  http_post_data((void*)sms_tx_buf, 16); // it was 50, 14.05.2015
+  strlcpy(sms_tx_buf, s, sizeof sms_tx_buf);
   log_printf("GSM debug command: '%s'", sms_tx_buf);
   sms_tx_idx = 0;
   sms_rx_buf[0] = 0;
   sms_rx_idx = 0;
   sms_rx_idx_debug = 0;
-  sms_at_debug = 1;
+}
+
+#ifdef HTTP_MODULE
+
+unsigned sms_debug_http_set(void)
+{
+  unsigned char buf[64];
+  http_post_data((void*)buf, sizeof buf);
+  sms_at_debug_start((char*)buf);
+  sms_at_debug = 1; // moved here for telnet 'gsm terminal' compatibility
   http_redirect("/at.html");
   return 0;
 }

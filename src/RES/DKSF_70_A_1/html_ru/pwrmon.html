@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html><head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1251">
+<title>Веб-интерфейс</title>
+<link rel="stylesheet" href="index.css" />
+<script src="devname_menu.cgi"></script>
+<!--<script src="menu.js"></script>-->
+<script src="pwrmon_get.cgi"></script>
+<style>
+body {min-width:1030px;}
+form {max-width:1000px;}
+#middle {padding-top:30px}
+td {border-top:none}
+input[type="text"],input[type="button"] {width:150px;margin-left:0px;margin-right:0px;}
+caption input[type="button"] {width:auto;min-width:120px;}
+caption {caption-side:bottom;}
+.lamp {display:inline-block;padding:0 1ex 0 1ex;border:solid 2px white;margin-left:4px;}
+.green  {background-color:#00E600;}
+.red {background-color:red;}
+.gray {background-color:#E6E6E6;}
+#ediv {z-index:100;}
+#ediv_sensor {z-index:110;}
+.edtdiv 
+{
+position: absolute;
+border: solid 1px green;
+background-color: white;
+padding:25px;
+left:100;
+top:100;
+box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
+visibility:hidden;
+}
+.edtdiv h2 {margin-top:0px;}
+.edt td,th {text-align:center;}
+.edt td {min-width:80px;}
+</style>
+</head>
+<body>
+<!-- DEBUG
+<script src="menu.js"></script>
+-->
+<script>
+/*
+///DEBUGG
+var devname="Test NetPing";
+var hwmodel=52;
+var sys_name="Test NetPing",sys_location="";
+var packfmt={name:{offs:0,len:18},bottom:{offs:18,len:1},top:{offs:19,len:1},__len:26};
+var data=[
+{name:"",ow_addr:[11,22,33,44,55,66,77,1],status:0,flags:1},
+{name:"",ow_addr:[11,22,33,44,55,66,77,2],status:1,flags:1},
+{name:"",ow_addr:[11,22,33,44,55,66,77,3],status:4,flags:1},
+{name:"",ow_addr:[11,22,33,44,55,66,77,4],status:5,flags:1}
+];
+////
+*/
+menu('Мониторинг сетевого напряжения');
+
+function getid(a) { return document.getElementById(a); }
+
+function hexb(v,len) //v3
+{
+ if(!len) len=1;
+ var r='',b;
+ for(n=0;n<len;++n)
+ {
+  b=v&0xff; v>>=8; // little endian pack of v
+  if(b<0x10) r+='0';
+  r+=b.toString(16);
+ }
+ return r;
+}
+
+function w1251(c) {
+if(c<128) return c; //eng
+if(c>=0x410&&c<=0x42f) return c-0x410+192;
+if(c>=0x430&&c<=0x44f) return c-0x430+224;
+if(c==0x401) return 168;
+if(c==0x451) return 184;
+return 63; //'?'
+}
+
+function pack(fmt, data) {
+ var d=new Array();
+ var i,l,n,x;
+ for(n=0;n<fmt.__len;++n) d[n]='00';
+ for(i in fmt) {
+ if(typeof(data[i])=='undefined') { continue; }
+  x=data[i]; f=fmt[i]; 
+  switch(typeof x) 
+  {
+  case 'string':
+   //x=x.replace(/\"/g,''); // 3.06.2015 quotes escaped
+   l=x.length; if(l>f.len-2) l=f.len-2; // 16.05.2013, it was -1, now -2
+   d[f.offs]=hexb(l);
+   for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
+   break;
+  case 'object':
+   if(!(x instanceof Array)) break;
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(Number(x[n])); }
+   break;
+  default:
+   x=Number(x); 
+   for(n=0;n<f.len;++n) { d[f.offs+n]=hexb(x&0xFF); x>>=8; }
+   break;
+  }
+ }
+ return d.join('');
+}
+
+function expand_table(table_container, n_ch)
+{
+ var mch=/_ch_/g, mch1=/_ch1_/g;
+ var rn,r,n,t,table=table_container.children[0];
+ for(rn=0;rn<table.rows.length;++rn)
+ {
+  r=table.rows[rn];
+  for(n=1;n<n_ch;n++)
+   r.appendChild(r.cells[1].cloneNode(true));
+ }
+ t=table_container.innerHTML;
+ n=0; t=t.replace(mch, function(){return n++ % n_ch;} );
+ n=0; t=t.replace(mch1, function(){return n++ % n_ch + 1;} );
+ table_container.innerHTML=t;
+}
+
+function seterr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"#ffffff";
+ if(e) throw fld;
+}
+
+function markerr(fld,e)
+{
+ fld.style.backgroundColor=e?"#ffaaaa":"";
+}
+
+function range(fld,a,b)
+{
+ v=parseInt(fld.value); e=isNaN(v)||v<a||v>b; seterr(fld,e); return v;
+}
+
+function chk_ow_addr(f)
+{
+ f.value=f.value.trim();
+ if(f.value=="") return [0,0,0,0,0,0,0,0];
+ var a=f.value.match(/[0-9a-f]{2}/ig);
+ seterr(f, (!a) || (!a.length) || (a.length != 8));
+ for(var i in a) a[i]=parseInt(a[i],16);
+ return a;
+}
+</script>
+
+<div id="middle">
+<div id="push_margin"></div>
+
+<form name="frm" method="post" action="error.html">
+<div id="template">
+<table id="edt_x_ref">
+
+<caption class="send_button_container">
+<div id="error" class="alert" style="float:left;visibility:hidden;">Автоматическое обновление информации не работает! Нажмите F5 для обновления статуса.</div>
+<div style="float:right"><input type="button" value="Применить изменения" onclick="chkfrm()"/></div>
+<div style="clear:both"></div>
+</caption>
+
+<tr>
+<th class="parname">Параметр</th>
+<th class="parinput numbered">Датчик _ch1_</th>
+<tr>
+<td class="parname">Памятка
+<td class="parinput"><input type="text" name="_name" maxlength="30" style="color:#009020"/>
+<tr>
+<td class="parname">Уникальный номер 1W
+<td class="parinput"><input type="text" name="ow_addr" style="font-size:9pt"/>
+<tr>
+<td class="parname">Статус датчика
+<td class="parinput" id="status_ch_">
+<tr>
+<td class="parname" id="edt_y_ref">Параметры слежения
+<td class="parinput"><input type="button" value="Настроить" onclick="edit_sensor(_ch_)"/>
+<tr>
+<td class="parname" id="edt_y_ref">Уведомления
+<td class="parinput"><input type="button" value="Настроить" onclick="edit_notif(_ch_)"/>
+<tr>
+<td class="parname">Напряжение, В
+<td class="parinput"><output name="v"/>
+<tr>
+<td class="parname">Частота, Гц
+<td class="parinput"><output name="f"/>
+
+</table>
+</div><!--template-->
+</form>
+
+<form name="sender" style="display:none" method="post" action="pwrmon_set.cgi">
+<input type="hidden" name="data" />
+</form>
+
+<script>
+function show_status_ch(ch,d)
+{
+ getid('status'+ch).innerHTML=d.comm_status?'Работает<div class="lamp green">&nbsp;</div>':'Отсутствует<div class="lamp gray">&nbsp;</div>';
+ frm.v[ch].value=d.v/10+'\u202fV';
+ frm.f[ch].value=d.f/100+'\u202fHz';
+}
+
+function show_status()
+{
+ for(var n in data) show_status_ch(n,data[n]);
+}
+
+function setfrm()
+{
+ var d;
+ for(var n in data)
+ {
+  d=data[n];
+  frm._name[n].value=d.name;
+  frm.ow_addr[n].value=d.ow_addr;
+ }
+}
+
+function chkfrm()
+{
+ var n,m,d={},td='';
+ for(n in data)
+ {
+  d.name=frm._name[n].value;
+  d.ow_addr=chk_ow_addr(frm.ow_addr[n]);
+  data[n]=d;
+  td+=pack(packfmt,d);
+ }
+ for(n=0;n<data.length;++n)
+  if(data[n].ow_addr.toString()!='0,0,0,0,0,0,0,0')
+   for(m=0;m<n;++m)
+    if(data[n].ow_addr.toString()==data[m].ow_addr.toString())
+    {
+     markerr(frm.ow_addr[m],true);
+     markerr(frm.ow_addr[n],true);
+     alert("Дублирование уникальных номеров 1Wire датчиков недопустимо!"); 
+     throw('not unique 1w');   
+    }
+ document.sender.data.value=td;
+ document.sender.submit();
+ return false; 
+}
+
+function edit_sensor(ch)
+{
+ if(getid('ediv').style.visibility=='visible') return;
+ var req=new XMLHttpRequest();
+ req.open("GET","/pwrmon_sensor_get.cgi?ch="+(ch*1+1),false);
+ req.send(null);
+ var d=req.responseText;
+ if(req.readyState!=4 || req.status!=200 || d=='error' || d=='') return;
+ d=eval(d);
+ getid('sensor_ch').innerHTML=ch*1+1;
+ sensor_frm.t1.value=d.t1;
+ sensor_frm.uv1.value=d.uv1;
+ sensor_frm.ov1.value=d.ov1;
+ sensor_frm.t12.value=d.t12;
+ sensor_frm.uv2.value=d.uv2;
+ sensor_frm.ov2.value=d.ov2;
+ sensor_frm.t2.value=d.t2;
+ var dv=getid('ediv_sensor');
+ x=getid('edt_x_ref').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
+ y=getid('edt_y_ref').offsetTop+100;
+ dv.style.top=y+'px';
+ dv.style.left=x+'px'; 
+ dv.style.visibility='visible';
+}
+
+function save_sensor(y)
+{
+ if(!y)
+ {
+  getid('ediv_sensor').style.visibility='hidden';
+ }
+ else
+ {
+  var req=new XMLHttpRequest();
+  var ch=getid('sensor_ch').innerHTML*1-1;
+  var d={},f=document.sensor_frm;
+  d.t1=range(f.t1,25,65000);
+  d.t12=range(f.t12,25,65000);
+  d.t2=range(f.t2,25,65000);
+  if(d.t12-d.t1<25) {markerr(f.t1); seterr(f.t12);}
+  if(d.t2-d.t12<25) {markerr(f.t12); seterr(f.t2);}
+  d.uv1=range(f.uv1,0,300);
+  d.ov1=range(f.ov1,0,300);
+  if(d.ov1-d.uv1<20) {markerr(f.uv1); seterr(f.ov1);}
+  d.uv2=range(f.uv2,0,300);
+  d.ov2=range(f.ov2,0,300);
+  if(d.ov2-d.uv2<10) {markerr(f.uv2); seterr(f.ov2);}  
+  if(d.uv1>d.uv2) {markerr(f.uv1); seterr(f.uv2);}
+  if(d.ov1<d.ov2) {markerr(f.ov1); seterr(f.ov2);}
+  var t='data=';
+  t+=hexb(d.uv1,2);
+  t+=hexb(d.ov1,2);
+  t+=hexb(d.t1,2);
+  t+=hexb(d.t12,2);
+  t+='0000'+'0000';
+  t+=hexb(d.uv2,2);
+  t+=hexb(d.ov2,2);
+  t+=hexb(d.t12,2);
+  t+=hexb(d.t2,2);
+  t+='0000'+'0000';
+  t+=hexb(d.t2,2);
+  nfreq.onload = function() 
+  {
+   getid('ediv').style.visibility='hidden';
+  }     
+  nfreq.open("POST","/pwrmon_sensor_set.cgi?ch="+(ch+1),true);
+  nfreq.send(t);
+ }
+}
+
+function set_nf_cb(ev,msk)
+{
+ f=document.notif_frm;
+ f['nf_log'+ev].checked=msk&1;
+ f['nf_syslog'+ev].checked=msk&2;
+ f['nf_email'+ev].checked=msk&4;
+ f['nf_sms'+ev].checked=msk&8;
+ f['nf_trap'+ev].checked=msk&16; 
+}
+
+function get_nf_cb_hex(ev)
+{
+ f=document.notif_frm;
+ msk=0;
+ if(f['nf_log'+ev].checked) msk|=1;
+ if(f['nf_syslog'+ev].checked) msk|=2;
+ if(f['nf_email'+ev].checked) msk|=4;
+ if(f['nf_sms'+ev].checked) msk|=8;
+ if(f['nf_trap'+ev].checked) msk|=16;
+ return hexb(msk,2);
+}
+
+function edit_notif(ch)
+{
+ if(getid('ediv').style.visibility=='visible') return;
+ var req=new XMLHttpRequest();
+ req.open("GET","/notify_get.cgi?nfid=07"+hexb(ch),false);//7=pwrmon
+ req.send(null);
+ var d=req.responseText;
+ if(req.readyState!=4 || req.status!=200 || d=='error' || d=='') return;
+ d=eval(d);
+ getid('notif_ch').innerHTML=parseInt(ch)+1;
+ set_nf_cb('3',d.high);
+ set_nf_cb('2',d.norm);
+ set_nf_cb('1',d.low);
+ set_nf_cb('0',d.fail);
+ set_nf_cb('_r',d.report);
+ notif_frm.nf_common_evt.checked=d.flags&1;
+ notif_frm.nf_common_ch.checked=d.flags&2; 
+ x=getid('edt_x_ref').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
+ y=getid('edt_y_ref').offsetTop+100;
+ getid('ediv').style.top=y+'px';
+ getid('ediv').style.left=x+'px'; 
+ getid('ediv').style.visibility='visible';
+}
+
+var nfreq=new XMLHttpRequest();
+
+function save_notif(y)
+{
+ if(!y)
+ {
+  getid('ediv').style.visibility='hidden';
+ }
+ else
+ {
+  nfreq.abort();
+  var ch=parseInt(getid('notif_ch').innerHTML)-1;
+  var d='data=07'+hexb(ch);//7=pwrmon
+  d+=get_nf_cb_hex('3');
+  d+=get_nf_cb_hex('2');
+  d+=get_nf_cb_hex('1');
+  d+=get_nf_cb_hex('0');  
+  d+=get_nf_cb_hex('_r');
+  d+='0000';//reserved0
+  var flags=0;
+  if(notif_frm.nf_common_evt.checked) flags|=1;
+  if(notif_frm.nf_common_ch.checked) flags|=2;
+  d+=hexb(flags);
+  d+='000000';//reserved1
+  nfreq.onload = function() 
+  {
+    getid('ediv').style.visibility='hidden';
+  }     
+  nfreq.open("POST","/notify_set.cgi",true);
+  nfreq.send(d);
+ }
+}
+</script>
+
+<div id="ediv_sensor" class="edtdiv">
+<form name="sensor_frm">
+<h2>Изменить настройку датчика &nbsp;<span id="sensor_ch">0</span></h2>
+<table class="edt paramtable">
+<caption class="send_button">
+<input type="button" value="Отменить изменения" onclick="save_sensor(0)"/>
+<input type="button" value="Сохранить изменения" onclick="save_sensor(1)"/>
+</caption>
+
+<tr>
+<td class="parname">Минимальная длительность отклонения, мс
+<td class="parinput"><input type="text" name="t1"/>
+<tr>
+<td class="parname">Нижний порог короткого отклонения, B
+<td class="parinput"><input type="text" name="uv1"/>
+<tr>
+<td class="parname">Верхний порог короткого отклонения, B
+<td class="parinput"><input type="text" name="ov1"/>
+<tr>
+<td class="parname">Порог классификации длительности отклонения, мс
+<td class="parinput"><input type="text" name="t12"/>
+<tr>
+<td class="parname">Нижний порог длительного отклонения, B
+<td class="parinput"><input type="text" name="uv2"/>
+<tr>
+<td class="parname">Верхний порог длительного отклонения, B
+<td class="parinput"><input type="text" name="ov2"/>
+<tr>
+<td class="parname">Минимальная длительность блэкаута, мс
+<td class="parinput"><input type="text" name="t2"/>
+
+</table>
+</form> <!--sensor_frm-->
+</div><!--ediv_sensor-->
+
+<div id="ediv" class="edtdiv">
+<form name="notif_frm">
+<h2>Уведомления для датчика напряжения&nbsp;<span id="notif_ch">0</span></h2>
+<table class="edt paramtable">
+<caption class="send_button">
+<input type="button" value="Отменить изменения" onclick="save_notif(0)"/>
+<input type="button" value="Сохранить изменения" onclick="save_notif(1)"/>
+</caption>
+
+<tr>
+<th style="text-align:left">Событие</th>
+<th>Журнал</th>
+<th>Syslog</th>
+<th>E-mail</th>
+<th>SMS</th>
+<th>SNMP Trap</th>
+</tr>
+
+<tr>
+<td style="text-align:left">Блэкаут</td>
+<td><input type="checkbox" name="nf_log3"/></td>
+<td><input type="checkbox" name="nf_syslog3"/></td>
+<td><input type="checkbox" name="nf_email3"/></td>
+<td><input type="checkbox" name="nf_sms3"/></td>
+<td><input type="checkbox" name="nf_trap3" disabled=""/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Длительное отклоненик</td>
+<td><input type="checkbox" name="nf_log2"/></td>
+<td><input type="checkbox" name="nf_syslog2"/></td>
+<td><input type="checkbox" name="nf_email2"/></td>
+<td><input type="checkbox" name="nf_sms2"/></td>
+<td><input type="checkbox" name="nf_trap2" disabled=""/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Короткое отклонение</td>
+<td><input type="checkbox" name="nf_log1"/></td>
+<td><input type="checkbox" name="nf_syslog1"/></td>
+<td><input type="checkbox" name="nf_email1"/></td>
+<td><input type="checkbox" name="nf_sms1"/></td>
+<td><input type="checkbox" name="nf_trap1" disabled=""/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Отказ, отключение датчика</td>
+<td><input type="checkbox" name="nf_log0"/></td>
+<td><input type="checkbox" name="nf_syslog0"/></td>
+<td><input type="checkbox" name="nf_email0"/></td>
+<td><input type="checkbox" name="nf_sms0"/></td>
+<td><input type="checkbox" name="nf_trap0" disabled=""/></td>
+</tr>
+
+<tr>
+<td style="text-align:left">Периодический отчёт</td>
+<td><input type="checkbox" name="nf_log_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_syslog_r" disabled=""/></td>
+<td><input type="checkbox" name="nf_email_r"/></td>
+<td><input type="checkbox" name="nf_sms_r"/></td>
+<td><input type="checkbox" name="nf_trap_r" disabled=""/></td>
+</tr>
+
+<tr class="suffixes">
+<td colspan="5">Использовать общий snmpTrapOID для всех событий</td>
+<td><input type="checkbox" name="nf_common_evt"/>
+
+<tr>
+<td colspan="5">Использовать общий snmpTrapOID для всех каналов</td>
+<td><input type="checkbox" name="nf_common_ch"/>
+
+</table>
+</form> <!--notif_frm-->
+</div><!--ediv-->
+
+<script>
+if(typeof(frm)=='undefined') var frm=document.frm;
+expand_table(getid('template'), data.length);
+setfrm();
+show_status();
+/*
+var sse_timeout;
+function show_sse_error() { getid('error').style.visibility="visible"; }
+function hide_sse_error() { getid('error').style.visibility="hidden"; }
+function alive() { clearTimeout(sse_timeout); sse_timeout=setTimeout(show_sse_error,12000); hide_sse_error(); }
+
+if(typeof(window.EventSource)=='undefined' || devname.indexOf('Test')!=-1)
+{
+ //getid('statelabel').innerHTML+=' (нажмите F5 для обновления)';
+ show_sse_error();
+}
+else
+{
+ var sse=new EventSource("/sse.cgi");
+ sse.addEventListener('pwrmon_state', function (e) { alive(); show_status_ch(e.data>>4,e.data&15); }, false);
+ sse.addEventListener('sse_ping', alive, false);
+ alive();
+}
+*/
+</script>
+
+</div><!--#middle-->
+<div id="footer">&copy;&nbsp;</div>
+</body>
+</html>

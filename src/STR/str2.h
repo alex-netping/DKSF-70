@@ -1,6 +1,6 @@
 void str_ip_to_str(unsigned char *data, char *str);
 void str_mask_to_str(unsigned netmask_number, char *str);
-char *quoted_name(void *pzt_name);
+char *quoted_name(unsigned char *pzt_name);
 int str_pasc_to_zeroterm(unsigned char *pasc_str, unsigned char *zeroterm_str, int target_size);
 
 /*

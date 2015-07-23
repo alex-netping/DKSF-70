@@ -52,6 +52,16 @@ v1.15-54
 v1.16-54 (testing for 201 on dkst51.1.9)
 12.11.2014
   using at+cmgd=1,4 instead of scanning sms purge during init for SIM900
+v1.17-200
+10.01.2015
+  voltage request via modem
+v1.17-201
+29.01.2015
+  enchanced modem Init sequence, deleted /r, ESCs from init strings, big ATs only for SIM900
+v1.18-201
+24.02.2015
+  Rewrite to use +CMGS to send SMS immediately, w/o writing to memory then multiple sending
+  SIM900 Call Ready polling before start
 */
 
 struct sms_setup_s {
@@ -102,8 +112,12 @@ extern systime_t sms_gsm_test_time;  // next +creg test timestamp in epoch ms
 extern unsigned sms_reboot_counter;  // counter of modem reboots from device power-up
 extern unsigned char sms_emergency_halt; // flag of halt on unrecoverable error
 extern char sms_last_error[64];
+extern unsigned char sms_at_debug;
+
+void sms_collate_dest_ph_numbers(void);
 
 void start_ussd(void);
+int  start_ussd_with_req(char *request);
 void ask_gsm_info(void);
 int get_pinger_status(void);
 
@@ -121,7 +135,10 @@ void sms_battery_event(unsigned event);
 unsigned sms_snmp_get(void);
 unsigned sms_snmp_set(unsigned id, unsigned char *data);
 
+void sms_at_debug_start(char *s);
 void sms_msg_printf(char *fmt, ...);
+void ucs2_to_win1251(char *src, char *dest, unsigned dest_len);
+void win1251_to_ucs2(char *src, char *dest, unsigned dest_len);
 void decode_ussd(char *s);
 
 void gsm_power(int onoff);

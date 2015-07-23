@@ -10,6 +10,11 @@ v1.3-70
   tcp issue for dups longer than original
   clear numeric ip if empty fqnd posted from sendmail.html page
   enable checkbox
+v1.4-52/201/202
+10.06.2015
+  sendmail_tx_buf rewrite
+  Date: header added
+  crossing dup segment rewrite in TCP Client
 */
 
 #include "platform_setup.h"
@@ -55,60 +60,9 @@ struct tcp_hdr_s {
   unsigned char  option[4];
 };
 
-enum tcp_cli_state_e {
-  TCPC_IDLE,
-  TCPC_CONNECT,
-  TCPC_SYN_SENT,
-  TCPC_ESTABLISHED,
-  TCPC_LAST_ACK,
-  TCPC_ERROR
-};
-
-enum tx_status_e {
-  TX_FREE,
-  TX_KEEP,
-  TX_NEW
-};
-
-struct tcp_client_s {
-  enum tcp_cli_state_e state;
-  unsigned ip32;
-  unsigned short port;
-  unsigned short my_port;
-  unsigned peer_seq; // next expected rx seq
-  unsigned my_seq; // outstanding tx segment starting seq
-  unsigned short sent_len; // len of last sent segment
-  char rx_data[768];
-  unsigned short rx_data_len;
-  char tx_data[1400];
-  char *tx_data_p;
-  unsigned short tx_data_len;
-  unsigned char flags;
-  unsigned char retry;
-  enum tx_status_e tx_state;
-  unsigned timeout;
-};
-
 struct tcp_client_s tcp_cli;
 
-enum sendmail_state_e {
-  SM_IDLE,
-  SM_CONNECT,
-  SM_EHLO,
-  SM_AUTH,
-  SM_USERNAME,
-  SM_PASSWD,
-  SM_MAIL_FROM,
-  SM_RCPT_TO,
-  SM_RCPT_CC_1,
-  SM_RCPT_CC_2,
-  SM_RCPT_CC_3,
-  SM_DATA,
-  SM_BODY,
-  SM_QUIT_AFTER_CHECK,
-  SM_QUIT,
-  SM_CLOSING
-} sm_state;
+enum sendmail_state_e sm_state;
 
 // 100ms ticks, session must be completed before this time (from tcp open to tcp closed or tcp error)
 unsigned sm_session_timeout = ~0U;
@@ -118,30 +72,21 @@ int sm_responce_ready;
 char sendmail_tx_buf[256*6]; // queue of outgoing e-mails
 char *sendmail_tail = sendmail_tx_buf; // tail of queue, next after last z-term char
 
-void sendmail(char *subj, char *body)
+void sendmail(char *subj, char *body, struct tm *d)
 {
-  if(subj == 0 || *subj == 0) return;
-  unsigned subj_len = strlen(subj);
-  unsigned body_len = 0;
-  if(body != 0) body_len = strlen(body);
-  unsigned total_len = 1 + subj_len + 1; // format id char + subj + zeroterm char
-  if(body && *body) total_len += body_len + 1; // body + zeroterm char
+  // Date: Tue, 2 Jun 2015 16:50:07 +0700
+  const char wdays[7][4] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+  const char month[12][4] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+  char date[40];
+  sprintf(date, "%s, %u %s %04u %02u:%02u:%02u %+03d00",
+    wdays[d->tm_wday], d->tm_mday, month[d->tm_mon], d->tm_year + 1900,
+    d->tm_hour, d->tm_min, d->tm_sec, sys_setup.timezone);
+
+  unsigned total_len = strlen(date) + strlen(subj) + strlen(body) + 3; // +3 zeroterm 0s
   if(sendmail_tail + total_len <= sendmail_tx_buf + sizeof sendmail_tx_buf)
   {
-    if(body && *body)
-    {
-      *sendmail_tail++ = 2;
-      strcpy(sendmail_tail, subj);
-      sendmail_tail += subj_len + 1;
-      strcpy(sendmail_tail, body);
-      sendmail_tail += body_len + 1;
-    }
-    else
-    {
-      *sendmail_tail++ = 1;
-      strcpy(sendmail_tail, subj);
-      sendmail_tail += subj_len + 1;
-    }
+    sendmail_tail += sprintf(sendmail_tail, "%s%c%s #%08x%c%s",
+          date, 0, subj, (unsigned)(local_time>>22), 0, body) + 1;  // with 'random' element in subj
   }
   else
   {
@@ -156,12 +101,15 @@ void sendmail(char *subj, char *body)
 void sm_remove_message(void)
 {
   if(sendmail_tx_buf[0] == 0) return;
-  unsigned qlen = strlen(sendmail_tx_buf) + 1; // fmt char, subj, zterm char
-  if(sendmail_tx_buf[0] == 2)
-    qlen += strlen(sendmail_tx_buf + qlen) + 1; // skip body+zterm char
-  memmove(sendmail_tx_buf, sendmail_tx_buf + qlen,  sendmail_tail - sendmail_tx_buf - qlen);
-  sendmail_tail -= qlen;
-  memset(sendmail_tail, 0, qlen);
+  char *s = sendmail_tx_buf;
+  s += strlen(s) + 1; // date
+  s += strlen(s) + 1; // subj
+  s += strlen(s) + 1; // body
+  unsigned new_len = sendmail_tail - s;
+  unsigned del_msg_len = s - sendmail_tx_buf;
+  memmove(sendmail_tx_buf, s, new_len);
+  sendmail_tail -= del_msg_len;
+  memset(sendmail_tail, 0, del_msg_len);
 }
 
 enum sendmail_state_e sendmail_state;
@@ -263,7 +211,10 @@ void sendmail_exec_and_parsing(void)
     if(sm_server_code != 220) goto error; // check connect prompt
     sm_request = "EHLO";
     tcp_cli_puts("EHLO netping-device\r\n");
-    sm_state = SM_AUTH;
+    if(sendmail_setup.user[0])
+      sm_state = SM_AUTH;
+    else
+      sm_state = SM_MAIL_FROM; // if credentials empty, skip AUTH
     break;
   case SM_AUTH:
     if(sm_server_code != 250) goto error; // check EHLO reply
@@ -312,7 +263,14 @@ void sendmail_exec_and_parsing(void)
     sm_state = SM_MAIL_FROM;
     break;
   case SM_MAIL_FROM:
-    if(sm_server_code != 235) goto error; // check AUTH PLAIN reply
+    if(sendmail_setup.user[0])
+    {
+      if(sm_server_code != 235) goto error; // if credentials was sent, check AUTH PLAIN reply
+    }
+    else
+    {
+      if(sm_server_code != 250) goto error; // check EHLO response
+    }
     sm_request = "MAIL FROM";
     tcp_cli_send_data(sprintf(tcp_cli.tx_data, "MAIL FROM:<%s>\r\n", sendmail_setup.from + 1));
     sm_state = SM_RCPT_TO;
@@ -371,8 +329,10 @@ void sendmail_exec_and_parsing(void)
     if(sendmail_setup.cc_1[0]) p += sprintf(p, "CC: <%s>\r\n", sendmail_setup.cc_1 + 1);
     if(sendmail_setup.cc_2[0]) p += sprintf(p, "CC: <%s>\r\n", sendmail_setup.cc_2 + 1);
     if(sendmail_setup.cc_3[0]) p += sprintf(p, "CC: <%s>\r\n", sendmail_setup.cc_3 + 1);
+    s = sendmail_tx_buf;
+    p += sprintf(p, "Date: %s\r\n", s);
+    s += strlen(s) + 1; // skip date, get to subj
     p += sprintf(p, "Subject: ");
-    s = sendmail_tx_buf + 1; // get message subj
     len = strlen(s); // len of subj
     for(;;)
     {
@@ -386,16 +346,16 @@ void sendmail_exec_and_parsing(void)
       if(len == 0) break;
       else *p++ = ' '; // ident from 2nd string
     }
+    s += 1; // skip zeroterm of subj, get to the body
     p += sprintf(p, "Content-Type: text/plain; charset=Windows-1251\r\n"
                     "Content-Transfer-Encoding: base64\r\n"
                     "\r\n");
-    if(sendmail_tx_buf[0] == 1)
+    if(s[0] == 0)
     {
       *p++ = '\r'; *p++ = '\n'; // only subj, empty body
     }
     else
     {
-      s = sendmail_tx_buf + 1 + strlen(sendmail_tx_buf + 1) + 1; // get body; sendmail_tx_buf[0] == 1 - message is only subj; 2 - subj+body
       for(len = strlen(s); len > 0;)
       {
         chunk_len = 57;
@@ -686,15 +646,29 @@ void tcp_cli_parsing(void)
   }
 
 #warning experimental
+
   // this for 'crossing' rx segment - dup segment which is *longer* than 'original'
   // SEQ wrapping ignored, because of low probability (~1E-6 per sendmail session)
+
+  /*
   int segm_len = htonl(tcp->seq) + rx_body_len - tcp_cli.peer_seq; // fresh data size
-  if( segm_len <= 0 // dup, already received
+  //if( segm_len <= 0 // dup, already received // this produces dups from netping after receiving empty segment with no data!
+  if( segm_len < 0 // dup, already received // this works good!
   ||  segm_len > rx_body_len ) // gap in rx stream, prev. seq lost
   { // wrong (unexpected) seq received from peer, initiate fast rexmit request
     tcp_cli.timeout = 0;
     return;
   }
+  */
+
+  unsigned seq = htonl(tcp->seq);
+  if( seq > tcp_cli.peer_seq  // gap in stream, prev. segment was lost
+  ||  seq + rx_body_len < tcp_cli.peer_seq  ) // already received, no new data in this segment
+  { // wrong (unexpected) seq received from peer, initiate fast rexmit request
+    tcp_cli.timeout = 0;
+    return;
+  }
+  int new_data_len = seq + rx_body_len - tcp_cli.peer_seq;
 
   /*
   if(htonl(tcp->seq) != tcp_cli.peer_seq) // 24.11.2015
@@ -713,18 +687,18 @@ void tcp_cli_parsing(void)
     tcp_cli.state = TCPC_LAST_ACK; // after 'automatic' FIN ACK reply go to LAST ACK state
   }
 
-  if(segm_len != 0)
+  if(new_data_len != 0)
   {
-    tcp_cli.peer_seq += segm_len; // advance ack for peer
+    tcp_cli.peer_seq += new_data_len; // advance ack for peer
     // get rx data with rx_buf protection
     unsigned n;
-    if(tcp_cli.rx_data_len + segm_len + 1 <= sizeof tcp_cli.rx_data)
-      n = segm_len;
+    if(tcp_cli.rx_data_len + new_data_len + 1 <= sizeof tcp_cli.rx_data)
+      n = new_data_len;
     else
       n = sizeof tcp_cli.rx_data - 1 - tcp_cli.rx_data_len;
     // accumulate data
     // in case of segm_len != rx_body_len skip duplicated part of rx data
-    memcpy(tcp_cli.rx_data + tcp_cli.rx_data_len, tcp_ref(NIC_RX_PACKET, rx_body_len - segm_len), n);
+    memcpy(tcp_cli.rx_data + tcp_cli.rx_data_len, tcp_ref(NIC_RX_PACKET, rx_body_len - new_data_len), n);
     tcp_cli.rx_data_len += n;
     tcp_cli.rx_data[n] = 0; // z-term
 

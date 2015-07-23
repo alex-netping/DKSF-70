@@ -58,11 +58,17 @@ function okp(fld)
  fld.size=w;
 }
 
+function escq(s)
+{
+ if(typeof s!='string') return s;
+ return s.replace(/"/g,'&quot;');
+}
+
 function input(label, name, aux)
 {
   var l='<tr><td class="parname">'+label+'</td>';
   for(ch=0;ch<Nch;++ch) 
-   l+='<td class="parinput"><input type="text" name="'+(name+ch)+'" value="'+data[ch][name]+'" '+(aux?aux:'')+'/></td>';
+   l+='<td class="parinput"><input type="text" name="'+(name+ch)+'" value="'+escq(data[ch][name])+'" '+(aux?aux:'')+'/></td>';
   return l+'</tr>';
 }
 
@@ -113,7 +119,7 @@ function pack(fmt, data) {
   switch(typeof x) 
   {
   case 'string':
-   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   //x=x.replace(/\"/g,''); // 3.06.2015 quotes escaped
    l=x.length; if(l>f.len-2) l=f.len-2; // 16.05.2013, it was -1, now -2
    d[f.offs]=hexb(l);
    for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
@@ -259,7 +265,10 @@ function chkfrm(reboot)
   d.snmp_port=range(f.snmp_port0,1,32767);
 
   f=document.frm_acc;
+  var colon=/:/;
+  seterr(f.uname0,f.uname0.value.match(colon));
   d.uname=f.uname0.value;
+  seterr(f.passwd0,f.passwd0.value.match(colon));
   d.passwd=f.passwd0.value;
   d.community_r=f.community_r0.value;
   d.community_w=f.community_w0.value;
@@ -363,11 +372,11 @@ document.write(l);
 <tr>
 <script>
 l='';
-l+=input('Имя пользователя','uname');
+l+=input('Имя пользователя','uname','maxlength="16"');
 l+='<tr><td class="parname">Пароль</td>'+
-'<td class="parinput"><input type="password" maxlength="16" name="passwd0" value="'+data[0].passwd+'"/></td></tr>';
-l+=input('Community чтения','community_r');
-l+=input('Community записи','community_w');
+'<td class="parinput"><input type="password" maxlength="16" name="passwd0" value="'+escq(data[0].passwd)+'"/></td></tr>';
+l+=input('Community чтения','community_r','maxlength="16"');
+l+=input('Community записи','community_w','maxlength="16"');
 l+=input('Фильтр доступа IP','filt_ip1');
 l+=input('Подсеть доступа IP (0.0.0.0 - отключить фильтр)','filt_mask1');
 document.write(l);
@@ -449,7 +458,7 @@ document.write(l);
 </div>
 </form>
 
-<form name="frm_rtc" action="error.html" method="post" onsubmit="false">
+<form name="frm_rtc" onsubmit="try {chkfrm_rtc();} catch(e){}; return false;">
 <h2>Встроенные часы (RTC)</h2>
 <table>
 <tr>
@@ -462,7 +471,7 @@ document.write(l);
 </tr>
 </table>
 <div class="send_button_container">
-<input type="button" value="Установить время" onclick="chkfrm_rtc()"/>
+<input type="submit" value="Установить время"/>
 </div>
 </form>
 

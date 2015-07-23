@@ -9,7 +9,7 @@ TriggerName=main
 LimitSize=0
 ByteLimit=50
 [DebugChecksum]
-Checksum=1737126588
+Checksum=-1059393728
 [Exceptions]
 StopOnUncaught=_ 0
 StopOnThrow=_ 0
@@ -66,16 +66,22 @@ Fmt3=struct ping_state_s-count	3	0
 Fmt4=struct ping_state_s-max_retry	3	0
 Fmt5=struct ping_state_s-timeout	3	0
 Fmt6=struct ping_state_s-wait_end_time	3	0
-Fmt7=struct sys_setup_s-filt_mask1	3	0
-Fmt8=struct sys_setup_s-http_port	3	0
-Fmt9=struct sys_setup_s-mask	3	0
-Fmt10=struct tcp_client_s-my_port	3	0
-Fmt11=struct tcp_client_s-port	3	0
-Fmt12=struct tcp_client_s-rx_data_len	3	0
-Fmt13=struct tcp_client_s-timeout	3	0
-Fmt14=struct tcp_client_s-tx_data_len	3	0
-Fmt15=struct tcp_socket_s-closing_time	3	0
-Fmt16=struct termo_state_s-value	3	0
+Fmt7=struct relhum_setup_s-rh_high	3	0
+Fmt8=struct relhum_setup_s-rh_low	3	0
+Fmt9=struct relhum_setup_s-t_high	3	0
+Fmt10=struct relhum_setup_s-t_low	3	0
+Fmt11=struct relhum_state_s-rh	3	0
+Fmt12=struct relhum_state_s-t	3	0
+Fmt13=struct sys_setup_s-filt_mask1	3	0
+Fmt14=struct sys_setup_s-http_port	3	0
+Fmt15=struct sys_setup_s-mask	3	0
+Fmt16=struct tcp_client_s-my_port	3	0
+Fmt17=struct tcp_client_s-port	3	0
+Fmt18=struct tcp_client_s-rx_data_len	3	0
+Fmt19=struct tcp_client_s-timeout	3	0
+Fmt20=struct tcp_client_s-tx_data_len	3	0
+Fmt21=struct tcp_socket_s-closing_time	3	0
+Fmt22=struct termo_state_s-value	3	0
 [array_types]
 Fmt0=unsigned char[4]	3	0
 Fmt1=unsigned int[1]	3	0
@@ -175,20 +181,7 @@ Exclusions=
 [Disassemble mode]
 mode=0
 [Breakpoints2]
-Bp0=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.259.5" 0 0 1 "" 0 "" 0
-Bp1=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.247.7" 0 0 1 "" 0 "" 0
-Bp2=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.404.9" 0 0 1 "" 0 "" 0
-Bp3=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.416.5" 0 0 1 "" 0 "" 0
-Bp4=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.353.7" 0 0 1 "" 0 "" 0
-Bp5=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.350.7" 0 0 1 "" 0 "" 0
-Bp6=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.311.5" 0 0 1 "" 0 "" 0
-Bp7=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.306.5" 0 0 1 "" 0 "" 0
-Bp8=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.297.5" 0 0 1 "" 0 "" 0
-Bp9=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.288.7" 0 0 1 "" 0 "" 0
-Bp10=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.252.7" 0 0 1 "" 0 "" 0
-Bp11=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.596.3" 0 0 1 "" 0 "" 0
-Bp12=_ 0 "EMUL_CODE" "{$PROJ_DIR$\SENDMAIL\sendmail.c}.620.1" 0 0 1 "" 0 "" 0
-Count=13
+Count=0
 [Aliases]
 Count=0
 SuppressDialog=0

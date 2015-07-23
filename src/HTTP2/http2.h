@@ -65,6 +65,16 @@ v21.18-70
 v21.19-54
 24.10.2014
   SSE ping
+v21.19-52/201/202
+13.02.2015
+  limit decoded len of user:password to avoid buffer overflow
+  exact uname/passwd length checks
+v21.20-60
+6.03.2015
+  escaping of pdata_pstring(), pdata_cstring()
+v21.21-48
+23.04.2015
+  pdata_ow_addr() added
 */
 
 #include "platform_setup.h"
@@ -73,7 +83,7 @@ v21.19-54
 #define HTTP_H
 
 #define HTTP_VER     21
-#define HTTP_BUILD   19
+#define HTTP_BUILD   21
 
 
 //---------------- Раздел, где будут определяться константы модуля -------------------------
@@ -163,6 +173,9 @@ void http_redirect_to_addr(unsigned char *ip, unsigned short port, char *locatio
 //   с данными data (zero-term, up to 1024 byte)
 void http_reply(int code, char *data);
 
+// использовать с кодом 500 (internal server error)
+void http_responce_err(int code);
+
 // size of 'data=' text in data, POSTed by webinterface page
 #define HTTP_POST_HDR_SIZE (sizeof "data=" - 1) // compiler dependant?
 
@@ -181,6 +194,9 @@ int pdata_pstring(char *dest, char *name, unsigned char *pstr);
 
 // для PLINK системы, добавляет в буфер dest 'имя:"C строка",' и глушит нулём
 int pdata_cstring(char *dest, char *name, char *cstr);
+
+// для PLINK системы, добавляет в буфер dest 'имя:"1W адрес",' и глушит нулём
+int pdata_ow_addr(char *dest, char *name, unsigned char *owa);
 
 // для PLINK системы, добавляет в буфер dest 'имя:"255.255.255.255",' и глушит нулём
 int pdata_ip(char *dest, char *name, unsigned char *ip);

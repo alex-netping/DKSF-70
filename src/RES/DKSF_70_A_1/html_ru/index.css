@@ -97,9 +97,15 @@ border-bottom: 2px solid #CCFFCC;
 }
 
 input[type="text"],
-input[type="password"] 
+input[type="password"],
+output
 {
 text-align: right;
+}
+
+output
+{
+display:inline-block;
 }
 
 caption
@@ -113,40 +119,64 @@ padding-left: 10px;
 padding-right: 20px;
 text-align: left;
 }
+
+.parinput {
+text-align: right;
+}
+
+table.paramtable td,
+table.paramtable th
+{
+text-align: right;
+}
+
+table.paramtable td:first-child,
+table.paramtable th:first-child
+{
+width: 80%;
+padding-left: 10px;
+padding-right: 20px;
+text-align: left;
+}
+
 .parsel {
 width: 80%;
 padding-left: 30px;
 }
-.parinput {
-text-align: right;
-}
+
 .wdttxt {
 color:#666666;
 font-size: 10pt;
 padding-bottom: 5px;
 }
+
 .td_send
 {
 text-align: right;
 padding-top: 20px;
 border: none;
 }
+
 .send_button_container  {
 text-align:right;
 margin-top: 20px;
 }
+
 .send_button {/*div style*/
 text-align:right;
 margin-top: 20px;
 }
+
 .table_footer {
 margin-top: 20px;
 }
+
 .note
 {
 font-size: 9pt;
 color: #888888;
 }
+
 .alert
 {
 font-size: 9pt;

@@ -476,7 +476,7 @@ void ir_reset_params(void)
 
 void ir_init(void)
 {
-  ir_status == STATUS_DONE;
+  ir_status = STATUS_DONE;
 }
 
 /*

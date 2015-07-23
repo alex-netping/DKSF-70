@@ -61,9 +61,16 @@ _extern  __no_init unsigned  eeprom_uart_signature                        @ 0xEE
 _extern  __no_init struct    uart_setup_s eeprom_uart_setup               @ 0xEE004304;
 #endif
 
+#ifdef SMOKE_MODULE
+_extern  __no_init unsigned eeprom_smoke_signature                         @ 0xEE004400-4;
+_extern  __no_init struct smoke_setup_s eeprom_smoke_setup[SMOKE_MAX_CH]   @ 0xEE004400; // 64b per elem-t
+#endif
+
 #ifdef RELHUM_MODULE
+#ifndef RELHUM_MAX_CH
 _extern  __no_init unsigned  eeprom_relhum_signature                       @ 0xEE004600;
 _extern  __no_init struct relhum_setup_s eeprom_relhum_setup               @ 0xEE004604;
+#endif
 #endif
 
 #ifdef SETTER_MAX_CH
@@ -100,12 +107,29 @@ _extern __no_init struct   relay_setup_s eeprom_relay_setup[RELAY_MAX_CHANNEL]  
 
 _extern __no_init unsigned                 eeprom_notify_signature                        @ 0xEE008000;
 _extern __no_init unsigned                 eeprom_notify_relay_signature                  @ 0xEE008004;
-_extern __no_init struct range_notify_s    eeprom_relhum_notify                           @ 0xEE008040;
+_extern __no_init unsigned                 eeprom_notify_smoke_signature                  @ 0xEE008008;
+_extern __no_init unsigned                 eeprom_notify_relhum_signature                 @ 0xEE00800c; // v3 relhum
+_extern __no_init unsigned                 eeprom_notify_pwrmon_signature                 @ 0xEE008010;
+//_extern __no_init struct range_notify_s    eeprom_relhum_notify                           @ 0xEE008040; // pror relhum v3 (multiple 1w), don't overwrite!
 _extern __no_init struct range_notify_s    eeprom_curdet_notify                           @ 0xEE008080;
-_extern __no_init struct range_notify_s    eeprom_thermo_notify[TERMO_N_CH]               @ 0xEE0080c0;
-_extern __no_init struct binary_notify_s   eeprom_io_notify[IO_MAX_CHANNEL]               @ 0xEE0082c0;
+_extern __no_init struct range_notify_s    eeprom_thermo_notify[TERMO_N_CH]               @ 0xEE0080c0; // 16b per elem.
+_extern __no_init struct range_notify_s    eeprom_smoke_notify[SMOKE_MAX_CH]              @ 0xEE0081c0; // 16b per ch
+_extern __no_init struct binary_notify_s   eeprom_io_notify[IO_MAX_CHANNEL]               @ 0xEE0082c0; // 64b per elem.
 _extern __no_init struct relay_notify_s    eeprom_relay_notify[RELAY_MAX_CHANNEL]         @ 0xEE008500;
+_extern __no_init struct relhum_notify_s   eeprom_relhum_notify[RELHUM_MAX_CH]            @ 0xEE008510; // 24b per elem. // since relhum v3
+//                     eeprom_pwrmon_notify[PWRMON_MAX_CH] is below
 
-_extern __no_init const unsigned           eeprom_sendmail_cc_signature                   @ 0xEE008600 - 8;
-_extern __no_init const unsigned           eeprom_sendmail_signature                      @ 0xEE008600 - 4;
+
+_extern __no_init unsigned                 eeprom_sendmail_cc_signature                   @ 0xEE008600 - 8;
+_extern __no_init unsigned                 eeprom_sendmail_signature                      @ 0xEE008600 - 4;
 _extern __no_init struct sendmail_setup_s  eeprom_sendmail_setup                          @ 0xEE008600;
+
+#ifdef RELHUM_MAX_CH // v3
+_extern  __no_init unsigned  eeprom_relhum_signature                                      @ 0xEE008A00 - 4;
+_extern  __no_init struct relhum_setup_s eeprom_relhum_setup[RELHUM_MAX_CH]               @ 0xEE008A00;
+#endif
+
+_extern __no_init unsigned                 eeprom_pwrmon_signature                        @ 0xEE008C00 - 4;
+_extern __no_init struct range_notify_s    eeprom_pwrmon_notify[PWRMON_MAX_CH]            @ 0xEE008C00;
+_extern __no_init struct pwrmon_setup_s    eeprom_pwrmon_setup[PWRMON_MAX_CH]             @ 0xEE008D00;
+

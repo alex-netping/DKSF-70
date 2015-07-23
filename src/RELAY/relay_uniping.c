@@ -9,12 +9,26 @@ v1.2-52
 v1.3-52
 7.11.2013
   critical bugfix in relay_save_and_log()
+v1.4-201
+19.03.2014
+  relay on-off log message
 v1.4-70
 28.07.2014
   extended, json-p compatible url-encoded API
-v1.5-70
-17.09.2014
- json-p CGI bugfixes
+v1.5-201
+18.08.2014
+  Eng log messages for forced reset and on/off
+v1.6-201
+13.10.2014
+  bugfix in relay.cgi
+v1.7-202
+19.02.2015
+  it was possible incorrect relay state on cold start on 51.1.9
+v1.8-52/202/202
+11.06.2015
+  merging of code
+  some SSE upgrade
+  simple on/off notification, incl. SMS
 */
 
 
@@ -31,16 +45,13 @@ v1.5-70
 const unsigned relay_signature = 0x63fb7710;
 
 char send_sse_flag;
-
-/*
 __no_init unsigned relay_hot_restart;
-const unsigned     relay_hot_restart_signature = 0x7096d8fb;
-*/
+const     unsigned relay_hot_restart_signature = 0x7096d8fb;
 
 struct relay_setup_s relay_setup[RELAY_MAX_CHANNEL];
 unsigned relay_forced_reset_time[RELAY_MAX_CHANNEL];
 unsigned char relay_forced_reset_polarity[RELAY_MAX_CHANNEL];
-/*__no_init*/ unsigned char relay_state;   // actual pin-level state
+__no_init unsigned char relay_state;   // actual pin-level state
 
 unsigned relay_http_sse(unsigned pkt, unsigned unused_more_data);
 
@@ -140,7 +151,7 @@ unsigned relay_http_get_data(unsigned pkt, unsigned more_data)
     PLINK(dest, relay_setup[0], mode);
     PLINK(dest, relay_setup[0], reset_time);
     PSIZE(dest, (char*)&relay_setup[1] - (char*)&relay_setup[0]); // must be the last // alignment!
-    dest += sprintf(dest, "}; data=[");
+    dest += sprintf(dest, "}; var data_status=%u; var data=[", relay_state);
   }
   int n;
   struct relay_setup_s *setup = &relay_setup[more_data];
@@ -188,7 +199,7 @@ void relay_save_and_log(int only_ch, char const *via) // if -1, all channels, -2
 
 #if WDOG_MAX_CHANNEL == RELAY_MAX_CHANNEL
     // unified name for relay and wdog channels
-    if(sizeof wdog_setup[0].name == sizeof relay_setup[0].name
+    if(sizeof wdog_setup[0].name == sizeof relay_setup[0].name // it's sizeof, not runtime name size!
     && memcmp(wdog_setup[ch].name, relay_setup[ch].name, sizeof wdog_setup[0].name) != 0 )
     {
       memcpy(wdog_setup[ch].name, relay_setup[ch].name, sizeof wdog_setup[0].name);
@@ -289,8 +300,8 @@ unsigned relay_http_get_cgi(unsigned pkt, unsigned more_data)
     {
       if(*p == 0)
       {
-        if((unsigned)relay_setup[ch].mode > 1) goto end; // if not manual
-        setup->mode = (enum relay_mode_e)(!(unsigned)setup->mode); // flip
+        if((unsigned)setup->mode > 1) goto end; // if not manual
+        setup->mode = (enum relay_mode_e)((unsigned)setup->mode ^ 1); // flip
         relay_save_and_log(ch, via_url);
         result = ok;
       }
@@ -316,6 +327,17 @@ HOOK_CGI(relay_get,    (void*)relay_http_get_data,  mime_js,  HTML_FLG_GET | HTM
 HOOK_CGI(relay_set,    (void*)relay_http_set_data,  mime_js,  HTML_FLG_POST );
 HOOK_CGI(relay_reset,  (void*)relay_http_set_forced_reset, mime_js,  HTML_FLG_POST );
 HOOK_CGI(relay,        (void*)relay_http_get_cgi,   mime_js,  HTML_FLG_GET | HTML_FLG_NOCACHE );
+
+void relay_sms_event(unsigned ch, unsigned state)
+{
+  if(ch >= RELAY_MAX_CHANNEL) return;
+  if(relay_notify[ch].on_off & NOTIFY_SMS)
+  {
+    sms_msg_printf("RELAY %u%s SWITCHED %s",
+       ch + 1, quoted_name(relay_setup[ch].name),
+       state ? "ON" : "OFF" );
+  }
+}
 
 int relay_snmp_get(unsigned id, unsigned char *data)
 {
@@ -420,7 +442,9 @@ int relay_snmp_set(unsigned id, unsigned char *data)
       {
       case RELAY_MODE_MANUAL_OFF: val = 1; break;
       case RELAY_MODE_MANUAL_ON:  val = 0; break;
-      default: return 0;
+      default: // 4.06.2015 - we need to add source value before return
+        snmp_add_asn_integer(val);
+        return 0; // no effect
       }
     }
     if(val >= 0 && val < (unsigned)RELAY_MAX_USED_MODE)
@@ -437,7 +461,7 @@ int relay_snmp_set(unsigned id, unsigned char *data)
     break;
   case 0x5506: // npRelayMemo, display string
     return SNMP_ERR_READ_ONLY;
-  case 0x550e: // npRelayFlip (not in MIB yet!)
+  case 0x550e: // npRelayFlip
     if(ch >= RELAY_MAX_CHANNEL) return SNMP_ERR_NO_SUCH_NAME;
     if(val != -1) return SNMP_ERR_BAD_VALUE;
     switch(relay_setup[ch].mode)
@@ -498,7 +522,9 @@ int relay_snmp_set(unsigned id, unsigned char *data)
       {
       case RELAY_MODE_MANUAL_OFF: val = 1; break;
       case RELAY_MODE_MANUAL_ON:  val = 0; break;
-      default: return 0; // do nothing
+      default:
+        snmp_add_asn_integer(val); // 4.06.2015 value copy in response
+        return 0; // do nothing
       }
       relay_setup[ch].mode = (enum relay_mode_e)val;
       relay_save_and_log(ch, via_snmp);
@@ -546,6 +572,9 @@ void relay_exec(void)
       notify(relay_notify[n].on_off, "PWR: relay %u%s switched %s",
           n+1, quoted_name(relay_setup[n].name), output ? "on" : "off");
 #endif
+#ifdef SMS_MODULE
+      relay_sms_event(n, output);
+#endif
       send_sse_flag = 1;
     }
   } // for
@@ -561,25 +590,28 @@ void relay_exec(void)
       tcp_send_packet(sse_sock, pkt, len);
     }
   }
-///  relay_hot_restart = relay_hot_restart_signature;
+  relay_hot_restart = relay_hot_restart_signature;
 }
 
-/*
+// rewrite 19.02.2015 on 52/201/202.8.19, it was possible incorrect relay state on cold start on 51.1.9
 void relay_early_init(void)
 {
   // fast restore of relay state on init
-  if(relay_hot_restart == relay_hot_restart_signature)
+  unsigned si = proj_disable_interrupt();
+  if(relay_hot_restart != relay_hot_restart_signature)
   {
+    relay_state = 0; // switch all relays off if strated from cold state
     for(int n=0; n<RELAY_MAX_CHANNEL; ++n)
-      relay_pin(n, (relay_state >> n) & 1);
-  }
-  else
-  {
-      relay_state = 0;
+    { // initiate minimal 2s off time in the case of short power failure
+      relay_forced_reset_time[n] = 20;
+      relay_forced_reset_polarity[n] = 0;
+    }
   }
   relay_pin_init();
+  for(int n=0; n<RELAY_MAX_CHANNEL; ++n)
+    relay_pin(n, (relay_state >> n) & 1);
+  proj_restore_interrupt(si);
 }
-*/
 
 void relay_init(void)
 {
@@ -609,3 +641,4 @@ void relay_event(enum event_e event)
 }
 
 #endif
+

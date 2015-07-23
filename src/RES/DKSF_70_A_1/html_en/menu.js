@@ -23,6 +23,7 @@ l+=[
 '<a href="ow.html">1-Wire</a>',
 '<a href="termo.html">Temperature</a>',
 '<a href="rh.html">Humidity</a>',
+'<a href="pwrmon.html">AC Monitoring</a>',
 '<a href="update.html">Firmware</a>',
 '<a href="log.html">Log</a>'
 ].join(' | ')+'<br/>';
@@ -36,6 +37,7 @@ l+=[
 '<a href="ow.html">1-Wire</a>',
 '<a href="termo.html">Temperature</a>',
 '<a href="rh.html">Humidity</a>',
+'<a href="pwrmon.html">AC Monitoring</a>',
 '<a href="update.html">Firmware</a>',
 '<a href="log.html">Log</a>'
 ].join(' | ')+'<br/>';
@@ -45,7 +47,8 @@ l+=[
 '<a href="relay.html">Relay</a>',
 '<a href="wdog.html">Watchdog</a>',
 '<a href="wtimer.html">Schedule</a>',
-'<a href="curdet.html">Smoke Sensor</a>',
+'<a href="curdet.html">Anlg Smoke Sensor</a>',
+'<a href="smoke.html">1W Smoke Sensors</a>',
 '<a href="ir.html">IR Commands</a>',
 '<a href="logic.html">Logic</a>'
 ].join(' | ');

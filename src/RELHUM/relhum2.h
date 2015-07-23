@@ -35,36 +35,45 @@ v2.3-70
 v2.4-70
 24.11.2014
   JSON-P returns relhum_result(...) instead of rh_result(...)
+v3.0
+22.06.2015
+  multiple 1w sensors
 */
 
-#define RH_I2C_ADDR_BYTE  0x40   // Si7005 chip
-
 struct relhum_setup_s {
+  unsigned char name[32];
+  unsigned char ow_addr[8]; // 23.01.2014
   unsigned char rh_high;
   unsigned char rh_low;
-  unsigned char flags;
-  unsigned char reserved0;
-  unsigned char ow_addr[8]; // 23.01.2014
+  signed   char t_high;
+  signed   char t_low;
+  unsigned reserved[5];
 };
 
-extern struct relhum_setup_s relhum_setup;
+extern struct relhum_setup_s relhum_setup[RELHUM_MAX_CH];
 
 enum relhum_status_e { // this is communication status, not safe range status (which is rh_status_h)
   RH_STATUS_FAILED = 0,
   RH_STATUS_OK    = 1
 };
 
-extern enum relhum_status_e rh_status; // status of communication to sensor
-extern unsigned char rh_status_h; // 0-3 status of fail, below, in, above safe range
-extern int rh_real_h;
-extern int rh_real_t;
-extern int rh_real_t_100; // *100
+struct relhum_state_s {
+  unsigned char rh;
+  unsigned char rh_status;
+  signed   char t;
+  unsigned char t_status;
+  unsigned char error;
+};
 
-// resets serial interface of the humidity sensor chip, to release shared SDA line
-void relhum_cancel(void);
+extern struct relhum_state_s relhum_state[RELHUM_MAX_CH];
+
 // check safe range, send notifications
-void rh_check_status(void);
+void rh_check_status(unsigned ch);
 
 int relhum_snmp_get(unsigned id, unsigned char *data);
 void relhum_init(void);
 void relhum_event(enum event_e event);
+
+/////////////// this is legacy shim! remove! ********
+extern unsigned rh_real_h, rh_status_h;
+extern int rh_real_t;

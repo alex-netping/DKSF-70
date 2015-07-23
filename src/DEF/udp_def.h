@@ -2,7 +2,7 @@
 //#define UDP_DEBUG		//Флажок включения отладки в модуле
 
 ///Функция разбора пришедшего UDP пакета
-#define UDP_PARSING()      do{ dns_parsing(); parse_snmp(); parse_ntp(); /* tftp_parse();  dhcp_parsing(); */}while(0)
+#define UDP_PARSING()      do{ dns_parsing(); parse_snmp(); parse_ntp(); setter_parsing(); /* tftp_parse();  dhcp_parsing(); */}while(0)
 
 ///Функция расчета CRC
 #define UDP_CALC_CRC(buf, len) crc_calc(buf, len)

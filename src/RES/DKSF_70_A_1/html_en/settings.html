@@ -113,7 +113,7 @@ function pack(fmt, data) {
   switch(typeof x) 
   {
   case 'string':
-   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes  
+   //x=x.replace(/\"/g,''); // 3.06.2015 quotes escaped in C code  
    l=x.length; if(l>f.len-2) l=f.len-2; // 16.05.2013, it was -1, now -2
    d[f.offs]=hexb(l);
    for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
@@ -259,7 +259,10 @@ function chkfrm(reboot)
   d.snmp_port=range(f.snmp_port0,1,32767);
 
   f=document.frm_acc;
+  var colon=/:/;
+  seterr(f.uname0,f.uname0.value.match(colon));
   d.uname=f.uname0.value;
+  seterr(f.passwd0,f.passwd0.value.match(colon));
   d.passwd=f.passwd0.value;
   d.community_r=f.community_r0.value;
   d.community_w=f.community_w0.value;
@@ -363,11 +366,11 @@ document.write(l);
 <tr>
 <script>
 l='';
-l+=input('Username','uname');
+l+=input('Username','uname','maxlength="16"');
 l+='<tr><td class="parname">Password</td>'+
 '<td class="parinput"><input type="password" maxlength="16" name="passwd0" value="'+data[0].passwd+'"/></td></tr>';
-l+=input('SNMP Community for Read','community_r');
-l+=input('SNMP Community for Write','community_w');
+l+=input('SNMP Community for Read','community_r','maxlength="16"');
+l+=input('SNMP Community for Write','community_w','maxlength="16"');
 l+=input('IP Filter (access granted for this subnet)','filt_ip1');
 l+=input('IP Filter Netmask (0.0.0.0 - disable filter)','filt_mask1');
 document.write(l);
@@ -396,8 +399,8 @@ document.write(l);
 <table>
 <script>
 l='';
-l+=input('SNMP Trap Destination #1','trap_ip1');
-l+=input('SNMP Trap Destination #2','trap_ip2');
+l+=hn_input('SNMP Trap Destination #1','trap_ip1'); // it was input(), fixed 10.06.2015 w/o release
+l+=hn_input('SNMP Trap Destination #2','trap_ip2');
 document.write(l);
 </script>   
 </table>
@@ -447,7 +450,7 @@ document.write(l);
 </div>
 </form>
 
-<form name="frm_rtc" action="error.html" method="post" onsubmit="false">
+<form name="frm_rtc" onsubmit="try {chkfrm_rtc();} catch(e){}; return false;">
 <h2>Embedded clock (RTC)</h2>
 <table>
 <tr>

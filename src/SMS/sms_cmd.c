@@ -70,6 +70,30 @@ v2.3-70
 v2.4-70
 10.02.2015
   bugfix in sms_snmp_set(), no returned data
+v2.3-707
+13.01.2015
+ win1251_to_ucs2()
+v2.3-70 ????
+17.12.2014
+  sendsms.cgi
+  npGsmSendSms snmp api
+v2.4-70
+2.06.2015
+  nf_disable in the all sms_xxx_event() routines
+v2.5-52/201/202
+4/06/2015
+  hostname added to pinger sms notification
+v2.5-70
+16.06.2015
+  cmd_ir() bugfix
+  pinger_exec() fix, SMS reqest possible if SMS notif. switched off; powersaving ignored
+  curdet SMS shortened to 70 chars
+  changed relay state reply: P1[mode][+/-] to show actual relay state
+v2.6-70
+14.07.2015
+  added line mode for state request in cmd_io()
+  /sendsms.cgi?utf8
+  npGsmSendSms in utf8
 */
 
 #include "platform_setup.h"
@@ -181,6 +205,7 @@ unsigned sms_http_get_data(unsigned pkt, unsigned more_data)
 int sms_http_set_data(void)
 {
   http_post_data((void*)&sms_setup, sizeof sms_setup);
+  sms_collate_dest_ph_numbers();
 #ifdef DNS_MODULE
   ping->state = PING_RESET;
   next_ping_time = sys_clock() + 5000;
@@ -236,7 +261,6 @@ error:
   return 0xff;
 }
 
-/*
 // ATTN! this reads long sms text data directly from req, not from req_args[64]!
 int sms_http_get_send_cgi(unsigned pkt, unsigned more_data)
 {
@@ -266,11 +290,40 @@ error:
   tcp_put_tx_body(pkt, (unsigned char*)result, strlen(result));
   return 0;
 }
-*/
+
+// http://i.voenmeh.ru/kafi5/Kam.loc/inform/UTF-8.htm
+void utf8_to_1251(char *src, char *dest, unsigned dest_size)
+{
+  unsigned c;
+  char *p = src, *q = dest;
+  char *end = dest + dest_size - 1;
+  for(;*p && q < end;)
+  {
+    if((*p & 0xe0) == 0xc0)
+    {
+      // utf8 2-byte char to unicode
+      c = (((p[0] & 0x1f) << 6) | (p[1] & 0x3f));
+      p += 2;
+      // unicode to 1251
+      if(c == 1025) c = 168; // Ё
+      else if(c == 1105) c = 184; // ё
+      else c = c - 1040 + 192;
+      *q++ = c;
+    }
+    else
+      *q++ = *p++;
+  }
+  *q = 0;
+}
 
 int sms_http_set_send_cgi(void)
 {
-  int err = sms_send_manual(req); // put POSTed data as is
+  char buf[256];
+  if(strcmp(req_args, "utf8") == 0)
+    utf8_to_1251(req, buf, sizeof buf);
+  else
+    strlccpy(buf, req, 0, sizeof buf);
+  int err = sms_send_manual(buf); // put POSTed data as is
   http_reply(200, err ? "sendsms_result('error');" : "sendsms_result('ok');");
   return 0;
 }
@@ -288,9 +341,11 @@ unsigned sms_http_get_stat_i(unsigned pkt, unsigned more_data)
 unsigned sms_http_get_stat(unsigned pkt, unsigned more_data)
 {
   unsigned char buf[512];
-  unsigned len;
+  unsigned len, reg;
+  reg = sms_emergency_halt ? 254 : sms_gsm_registration;
   len = sprintf((char*)buf, "({creg:%u,sig_level:%u,creg_refresh_time:%i,sms_reboot_counter:%u,sms_gsm_failed:%u})",
-           sms_gsm_registration, sms_sig_level,
+           reg,
+           sms_sig_level,
            (int)(sms_gsm_test_time - sys_clock()),
            sms_reboot_counter,
            sms_gsm_failed
@@ -319,8 +374,41 @@ unsigned sms_http_get_ussd(unsigned pkt, unsigned more_data)
   return 0;
 }
 
+unsigned sms_http_cgi_get_start_ussd(unsigned pkt, unsigned more_data)
+{
+  char result[64];
+  if(strlen(req_args) > 0)
+  {
+    char *p = req_args;
+    while(*p)
+    {
+      if(*p == 'a') *p = '*';
+      if(*p == 'x') *p = '#';
+      ++p;
+    }
+    if(start_ussd_with_req(req_args) != 0xff)
+      strcpy(result, "ussdstart_result('ok');");
+    else
+      strcpy(result, "ussdstart_result('busy');");
+  }
+  else
+    strcpy(result, "ussdstart_result('error');");
+  tcp_put_tx_body(pkt, (void*)result, strlen(result));
+  return 0;
+}
+
+unsigned sms_http_cgi_get_read_ussd(unsigned pkt, unsigned more_data)
+{
+  char buf[300];
+  sprintf(buf, "ussdread_result(\"%s\");", sms_ussd_responce);
+  tcp_put_tx_body(pkt, (void*)buf, strlen(buf));
+  return 0;
+}
+
 HOOK_CGI(sms_ussd_i, (void*)sms_http_get_ussd_i, mime_js,  HTML_FLG_GET | HTML_FLG_NOCACHE );
 HOOK_CGI(sms_ussd,   (void*)sms_http_get_ussd,   mime_js,  HTML_FLG_GET | HTML_FLG_NOCACHE );
+HOOK_CGI(ussdstart,  (void*)sms_http_cgi_get_start_ussd,   mime_js,  HTML_FLG_GET | HTML_FLG_NOCACHE );
+HOOK_CGI(ussdread,   (void*)sms_http_cgi_get_read_ussd,   mime_js,  HTML_FLG_GET | HTML_FLG_NOCACHE );
 
 #endif // ifdef HTTP_MODULE
 
@@ -410,25 +498,25 @@ int sms_parse_command(char *cmd_str, char *calling_phone)
       strcat(sms_responce, words[3]);
     }
   }
-  sms_q_text(sms_responce, calling_phone); // enqueue results for sending by sms
+  if(sms_emergency_halt == 0)
+    sms_q_text(sms_responce, calling_phone); // enqueue results for sending by sms
+  else
+    log_printf("GSM is down, reply msg dropped: %s", sms_responce);
   return 1;
 }
 
 void place_io_state(unsigned ch)
 {
-  unsigned m;
   if(ch >= IO_MAX_CHANNEL) return;
+  char *mode = "?";
+  switch(io_setup[ch].direction)
+  {
+  case 0: mode = "IN"; break;
+  case 1: mode = "OUT"; break;
+  case 2: mode = "OUT.L"; break;
+  }
   char *s = sms_responce + strlen(sms_responce);
-  *s++ = 'L';
-  *s++ = '1' + ch;
-  *s++ = '=';
-  //struct io_setup_s *setup = &io_setup[ch];
-  //if(setup->direction) m = setup->level_out; // removed 22.12.2014
-  //else
-  m = io_state[ch].level_filtered;
-  *s++ =  m ? '1' : '0';
-  *s++ = ' ';
-  *s=0;
+  sprintf(s, "L%u=%u(%s) ", ch + 1, io_state[ch].level_filtered, mode);
 }
 
 void cmd_io(char *s)
@@ -487,8 +575,8 @@ void place_pwr_state(unsigned ch, unsigned add_wdog_info)
   enum relay_mode_e m = relay_setup[ch].mode;
   switch(m)
   {
-  case RELAY_MODE_MANUAL_OFF: c = '-'; break;
-  case RELAY_MODE_MANUAL_ON:  c = '+'; break;
+  case RELAY_MODE_MANUAL_OFF: c = 'M'; break;
+  case RELAY_MODE_MANUAL_ON:  c = 'M'; break;
   case RELAY_MODE_WDOG:       c = 'W'; break;
   case RELAY_MODE_SCHED:      c = 'S'; break;
   case RELAY_MODE_SCHED_WDOG: c = 'X'; break;
@@ -496,8 +584,8 @@ void place_pwr_state(unsigned ch, unsigned add_wdog_info)
   default: c = '?'; break;
   }
   *s++ = c;
-  *s++ = ' ';
-  *s = 0;
+  *s++ = get_relay_state(ch, 1, 1) ? '+' : '-' ;
+  *s++ = 0;
 #ifdef WDOG_MODULE
   if(add_wdog_info)
   {
@@ -508,9 +596,9 @@ void place_pwr_state(unsigned ch, unsigned add_wdog_info)
 #endif
     if(m == RELAY_MODE_WDOG || m == RELAY_MODE_SCHED_WDOG)
       if(wch == 0xff)
-        sprintf(s, "(- RESETS, - REP.RESETS)");
+        sprintf(s, " (- RESETS, - REP.RESETS)");
       else
-        sprintf(s, "(%u RESETS, %u REP.RESETS) ",
+        sprintf(s, " (%u RESETS, %u REP.RESETS) ",
            wdog_state[wch].reset_count, wdog_state[wch].repeating_resets_count); // wdog.c
   }
 #endif // WDOG_MODULE
@@ -539,7 +627,9 @@ void cmd_pwr(char *s)
     else
     {
       place_np_done();
-      switch(s[2])
+      char c = s[2];
+      if(c == 'M') c = s[3];
+      switch(c)
       {
       case '-': relay_setup[ch].mode = RELAY_MODE_MANUAL_OFF; break;
       case '+': relay_setup[ch].mode = RELAY_MODE_MANUAL_ON; break;
@@ -553,8 +643,9 @@ void cmd_pwr(char *s)
 #ifdef LOGIC_MODULE
       case 'L': relay_setup[ch].mode = RELAY_MODE_LOGIC; break;
 #endif
-      case 'R': relay_forced_reset(ch, relay_setup[ch].reset_time * 10, 0, via_sms); break; // *10 sec to 100ms ticks 30.05.14
-      //
+      case 'R':
+        relay_forced_reset(ch, relay_setup[ch].reset_time * 10, wdog_setup[ch].reset_mode, via_sms); // *10 sec to 100ms ticks 30.05.14
+      break;
       default : goto error;
       }
     relay_save_and_log(ch, via_sms);
@@ -688,7 +779,6 @@ error:
 void cmd_ir(char *cmd)
 {
   unsigned n;
-  if(cmd[0] != 'T') goto error;
   if(cmd[1] < '1' || cmd[1] > '9') goto error;
   n = atoi(cmd + 1);
   if(n < 1 || n > IR_COMMANDS_N) goto error;
@@ -706,6 +796,25 @@ error:
 void cmd_relhum(char *cmd)
 {
   char *s;
+  unsigned ch;
+  struct relhum_setup_s *su;
+  struct relhum_state_s *st;
+#ifdef RELHUM_MAX_CH
+  if(cmd[0] != 'H' || cmd[2]!='?' || cmd[3] != 0) goto error;
+  ch = cmd[1] - '1';
+  if(ch >= RELHUM_MAX_CH) goto error;
+  su = &relhum_setup[ch];
+  st = &relhum_state[ch];
+  place_np_reply();
+  s = sms_responce + strlen(sms_responce);
+  if(st->rh_status == 0 || st->rh_status > 3)
+    sprintf(s, "H%u=? SENSOR FAILED", ch + 1);
+  else
+    sprintf(s, "H%u=%u%% %s SAFE RANGE (%u..%u%%) T=%dC",
+       ch + 1, st->rh, safe[st->rh_status],
+       su->rh_low, su->rh_high,
+       st->t );
+#else
   if(cmd[0] != 'H' || cmd[1]!='?' || cmd[2] != 0) goto error;
   place_np_reply();
   s = sms_responce + strlen(sms_responce);
@@ -715,7 +824,8 @@ void cmd_relhum(char *cmd)
     sprintf(s, "H=%u%% %s SAFE RANGE (%u..%u%%) T=%dC",
        rh_real_h, safe[rh_status_h],
        relhum_setup.rh_low, relhum_setup.rh_high,
-       rh_real_t);
+       rh_real_t );
+#endif
   place_id();
   return;
 error:
@@ -804,23 +914,24 @@ static char *quoted_name(unsigned char *label)
 #ifdef IO_MODULE
 void sms_io_event(int ch)
 {
+  if(sys_setup.nf_disable) return;
   if(ch >= IO_MAX_CHANNEL) return;
 #ifndef NOTIFY_MODULE
   if(ch >= 4) return; // implemented for IO 1..4 (ch 0..3) only // LBS 22.01.2013
   unsigned mask = SMS_EVENT_IO_BASE << ch;
   if((sms_setup.event_mask & mask) == 0) return;
 #endif
-  struct io_setup_s *setup = &io_setup[ch];
-//  sms_msg_printf("IO LINE %u %sNOW IS %s", ch+1, quoted_name(setup->name),
-    sms_msg_printf("IO LINE %u%s NOW IS %s", ch+1, quoted_name(setup->name),  // quoted_name() is different from static quited_name(), leading/trailing space
-               io_state[ch].level_filtered ? "ON" : "OFF");
-               // ((io_registered_state >> ch) & 1) ? "ON" : "OFF"); // restored to level_filtered 22.12.2014, level_filtered routed to actual IO state all time
+  struct binary_notify_s *nf = &io_notify[ch];
+  unsigned level = io_state[ch].level_filtered;
+  unsigned char *legend =  level ? nf->legend_high : nf->legend_low; // pzt strings
+  sms_msg_printf("IO%u=%u %s %s", ch + 1, level, io_setup[ch].name + 1, legend + 1);
 }
 #endif // IO_MODULE
 
 #ifdef TERMO_MODULE
 void sms_thermo_event(int ch)
 {
+  if(sys_setup.nf_disable) return;
 #ifndef NOTIFY_MODULE
   if((sms_setup.event_mask & SMS_EVENT_THERMO) == 0) return;
 #endif
@@ -841,10 +952,12 @@ void sms_thermo_event(int ch)
 }
 #endif // TERMO_MODULE
 
-
-#ifdef RELHUM_MODULE
+#ifdef RELHUM_MAX_CH
+ // not needed, placed in relhum.c
+#elif RELHUM_MODULE
 void sms_relhum_event(void)
 {
+  if(sys_setup.nf_disable) return;
   const char stat[3][6] = {"BELOW", "IN", "ABOVE"};
   if(rh_status_h > 3) return;
   if(rh_status_h == 0)
@@ -857,11 +970,12 @@ void sms_relhum_event(void)
 #endif // RELHUM_MODULE
 
 #ifdef CUR_DET_MODULE
-const char * const curloop_sms_state_text[5] = {"OK", "ALARM!", "FAILED (OPEN)", "FAILED (SHORT)", "NOT POWERED"};
+const char * const curloop_sms_state_text[5] = {"OK", "ALARM!", "FAILED (OPEN LOOP)", "FAILED (SHORT CIRQUIT)", "NOT POWERED"};
 void sms_curdet_event(void)
 {
+  if(sys_setup.nf_disable) return;
   if(curdet_status > 4) return;
-  sms_msg_printf("CURRENT LOOP (SMOKE SENSOR) STATUS CHANGE: %s", curloop_sms_state_text[curdet_status]);
+  sms_msg_printf("ANALOG SMOKE SENSOR: %s", curloop_sms_state_text[curdet_status]);
 }
 #endif // CUR_DET_MODULE
 
@@ -869,10 +983,10 @@ void sms_curdet_event(void)
 #warning make it consistent with rest of FW
 void sms_pwr_event(int ch, char event_code)
 {
+  if(sys_setup.nf_disable) return; // 11.12.14
 #ifndef NOTIFY_MODULE
   if((sms_setup.event_mask & SMS_EVENT_PWR) == 0) return;
 #endif
-  if(sys_setup.nf_disable) return; // 11.12.14
   char txt[48];
   struct pwr_setup_s *setup = &pwr_setup[ch];
   unsigned manual = setup->manual & 3;
@@ -895,22 +1009,24 @@ void sms_pwr_event(int ch, char event_code)
   default:
     return;
   }
-  sms_msg_printf("PWR %u%s %s", ch+1, quoted_name(setup->name), txt); // quoted_name() is different from static quited_name(), leading/trailing space
+  sms_msg_printf("PWR %u%s %s", ch+1, quoted_name(setup->name), txt); // new quoted_name() gives sp before name
 }
 #endif
 
 
 void sms_pinger_event(int status)
 {
+  if(sys_setup.nf_disable) return; // 11.12.14
   if((sms_setup.event_mask & SMS_EVENT_PINGER) == 0) return;
-  sms_msg_printf("PINGER STATUS: %s", status ? "OK" : "FAILED");
+  sms_msg_printf("PINGER STATUS: %s (%s)", status ? "OK" : "FAILED",
+     sms_setup.pinger_hostname + 1);
 }
 
 #ifdef BATTERY_MODULE
 void sms_battery_event(unsigned event)
 {
-  if((sms_setup.event_mask & SMS_EVENT_BATTERY) == 0) return;
   if(sys_setup.nf_disable) return; // 11.12.2014
+  if((sms_setup.event_mask & SMS_EVENT_BATTERY) == 0) return;
   switch(event)
   {
   case BATTERY_NOTIF_EXT_POWER:
@@ -928,8 +1044,8 @@ void sms_battery_event(unsigned event)
 
 void sms_ethernet_event(unsigned phy_link_status)
 {
-  if((sms_setup.event_mask & SMS_EVENT_ETHERNET) == 0) return;
   if(sys_setup.nf_disable) return; // 11.12.2014
+  if((sms_setup.event_mask & SMS_EVENT_ETHERNET) == 0) return;
   if(sys_phy_number == 2)
   {
     sms_msg_printf("ETHERNET LINK STATUS: 1 %s, 2 %s",
@@ -946,8 +1062,7 @@ void sms_ethernet_event(unsigned phy_link_status)
 void set_pinger_status(int status)
 {
   if(status) status = 1;
-  if(pinger_status ^ status)
-    if(!sys_setup.nf_disable) // 11.12.2014
+  if(pinger_status != status)
       sms_pinger_event(status);
   pinger_status = status;
 }
@@ -976,14 +1091,18 @@ void pinger_init(void)
 
 void pinger_exec(void)
 {
-  if((sms_setup.event_mask & SMS_EVENT_PINGER) == 0
-  || (!valid_ip(sms_setup.pinger_ip) && sms_setup.pinger_hostname[0] == 0)
-  || powersaving // LBS 28.08.2012
-  || sms_emergency_halt) // 25.02.2014
-  {
+  if(sms_setup.pinger_hostname[0] == 0)
+  { // nothing to poll
+    set_pinger_status(0);
     ping->state = PING_RESET;
     return;
   }
+  if(sms_emergency_halt)
+  { // cease useless work
+    ping->state = PING_RESET;
+    return;
+  }
+  // powersaving ignored; on dksf 54 Enet may be up while on battery power
 
   systime_t time = sys_clock();
 
@@ -1067,7 +1186,7 @@ unsigned char hex_to_byte(char *s)
 
 #endif
 
-void ucs2_to_win1251(char *src, char *dest, unsigned dest_len) // also makes quote escape for JSON string representation
+void ucs2_to_win1251(char *src, char *dest, unsigned dest_len)
 {
   unsigned dest_len_in_uc = (dest_len - 1) << 2;
   unsigned len = strlen(src) & (~3); // должно быть кратно 4 (4 hex символа на 1 уникод)
@@ -1079,14 +1198,34 @@ void ucs2_to_win1251(char *src, char *dest, unsigned dest_len) // also makes quo
     c = hex_to_byte(s)<<8 | hex_to_byte(s+2);
     if(c>126)
     {
-      if(c==0x451) c = 'ё';
-      else if(c==0x401) c = 'Ё';
+      if(c==0x451) c = 'ё'; // Win1251 0xB8 little yo
+      else if(c==0x401) c = 'Ё'; // Win1251 0xA8 big YO
       else if(c>=0x410 && c<=0x44f) c = c - 0x410 + 0xC0;
       else c = '?';
     }
-    else if(c==0) c = 32;
+    else if(c==0) c = ' '; // errata? UCS-2 space is 0020
 ///    if(c=='"') *dest++ = '\\'; // escape quotes for JSON code /// removed 5.10.2014, separate escaape in str_escape_for_js_string()
     *dest++ = (char)c;
+  }
+  *dest = 0;
+}
+
+void win1251_to_ucs2(char *src, char *dest, unsigned dest_len)
+{
+  unsigned max_len = (dest_len - 1) >> 2; // uc 4-digit 'characters' + zeroterm
+  unsigned len = strlen(src);
+  if(len > max_len) len = max_len;
+
+  char *s = src;
+  unsigned c;
+  for(; len > 0; --len)
+  {
+    c = *s++;
+    if(c >= 0xC0) c = c - 0xC0 + 0x410; // Russian part of 1251 to UCS2 0x0410 to 0x044F
+    else if(c == 'ё') c = 0x451; // 1251 0xB8 little yo
+    else if(c == 'Ё') c = 0x401; // 1251 0xA8 big YO
+    // else UCS2 and W1251 code is the same
+    dest += sprintf(dest, "%04X", c);
   }
   *dest = 0;
 }
@@ -1126,7 +1265,6 @@ void sms_make_trap(void)
 
 void sms_trap_gsm_alive(void)
 {
-  if(sys_setup.nf_disable) return; // 11.12.2014
   if(valid_ip(sys_setup.trap_ip1)) { sms_make_trap(); snmp_send_trap(sys_setup.trap_ip1); }
   if(valid_ip(sys_setup.trap_ip2)) { sms_make_trap(); snmp_send_trap(sys_setup.trap_ip2); }
 }
@@ -1151,7 +1289,7 @@ unsigned sms_snmp_get(void)
 
 unsigned sms_snmp_set(unsigned id, unsigned char *data)
 {
-  char buf[256];
+  char buf[384], buf1251[256];
   unsigned len;
   switch(id & 0xff)
   {
@@ -1162,7 +1300,8 @@ unsigned sms_snmp_set(unsigned id, unsigned char *data)
     if(len >= sizeof buf) len = sizeof buf - 1;
     memcpy(buf, data, len);
     buf[len] = 0;
-    sms_send_manual(buf);
+    utf8_to_1251(buf,buf1251, sizeof buf1251);
+    sms_send_manual(buf1251);
     snmp_add_asn_obj(SNMP_TYPE_OCTET_STRING, len, (void*)buf); // 10.02.2015
     return 0;
   default:
@@ -1195,17 +1334,23 @@ void sms_cmd_periodic_exec(void)
         dest += sprintf(dest, "T%u=?", i+1);
     }
   }
+#ifdef IO_MODULE
   for(int i=0; i<IO_MAX_CHANNEL; ++i)
   {
     if(io_notify[i].report & NOTIFY_SMS)
-      dest += sprintf(dest, "I%u=%u ", i+1, io_state[i].level_filtered ? 1 : 0);
+      dest += sprintf(dest, "%c%u=%u ", io_setup[i].direction ? 'O' : 'I', i+1,
+          io_state[i].level_filtered ? 1 : 0);
   }
+#endif
+
   for(int i=0; i<RELAY_MAX_CHANNEL; ++i) // 12.11.2014
   {
     if(relay_notify[i].report & NOTIFY_SMS)
       dest += sprintf(dest, "P%u=%s ", i+1, get_relay_state(i, 0, 0) ? "ON" : "OFF" );
   }
-#ifdef RELHUM_MODULE
+#ifdef RELHUM_MAX_CH
+  // not used, mooved to notify.c
+#elif defined(RELHUM_MODULE)
   if(relhum_notify.report & NOTIFY_SMS)
     if(rh_status_h != 0)
       dest += sprintf(dest, "RH=%u%%", rh_real_h);

@@ -161,6 +161,7 @@ unsigned termo_http_get_cgi(unsigned pkt, unsigned more_data)
 {
   char buf[128] = "thermo_result('error');";
   char *p = req_args;
+  
   if(*p++ != 't') goto end;
   unsigned ch;
   ch = atoi(p);
@@ -479,10 +480,8 @@ void termo_send_trap(int ch)
   // so, make new trap message every time
 
   if(valid_ip(sys_setup.trap_ip1)) { termo_make_trap(ch); snmp_send_trap(sys_setup.trap_ip1); }
-  #if PROJECT_MODEL != 51
   if(valid_ip(sys_setup.trap_ip2)) { termo_make_trap(ch); snmp_send_trap(sys_setup.trap_ip2); }
-  #endif
-}
+ }
 
 void termo_reset_params(void)
 {

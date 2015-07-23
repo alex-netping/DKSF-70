@@ -75,7 +75,7 @@ unsigned short update_fw_crc_calc(unsigned addr, unsigned size)
     for (j=0;j<block_size;j++){
       i=0;
       data=buf[j];
-      do{		
+      do{
         tmp=(crc ^ data) & 1;
         crc >>= 1;
         if (tmp) {crc ^= 0xA001;}
@@ -147,7 +147,7 @@ void set_sn(unsigned char *sn)
   bufTmp[0] = sn[3];
   bufTmp[1] = sn[2];
   bufTmp[2] = sn[1];
-  bufTmp[3] = sn[0];	
+  bufTmp[3] = sn[0];
   flash_lpc_write((unsigned)&serial, bufTmp, 4);
 }
 
@@ -199,9 +199,48 @@ void reload_proc(void)
     tcpcom_init();
   }
 #endif
+#ifdef SENDMAIL_MODULE
+  // break sendmail connection
+  if(tcp_cli.state != TCPC_IDLE)
+    tcp_cli_rst_and_clear();
+#endif
   set_hardware_mac_address(sys_setup.mac);
   ip_reload();
   main_reload = 0;
+}
+
+void soft_reboot(void)
+{
+  // reboot after 1s pause for request completition (http session, udp reply etc.)
+  static unsigned hard_reboot_time = 0;
+  if(hard_reboot_time == 0)
+    hard_reboot_time = sys_clock_100ms + 10;
+  else
+    if(sys_clock_100ms > hard_reboot_time)
+      reboot_proc();
+  // break SSE push connection
+  if(sse_sock != 0xff && tcp_socket[sse_sock].tcp_state != TCP_RESERVED)
+  {
+    tcp_send_flags(TCP_MSK_ACK | TCP_MSK_RST | TCP_MSK_PSH, sse_sock);
+    tcp_clear_connection(sse_sock);
+    tcp_socket[sse_sock].used=0;
+    sse_sock = 0xff;
+  }
+#ifdef TCPCOM_MODULE
+  // break TCP-COM connection
+  if(tcpcom_soc < 0xfe)
+  {
+    tcp_send_flags(TCP_MSK_ACK | TCP_MSK_RST | TCP_MSK_PSH, tcpcom_soc);
+    tcp_clear_connection(tcpcom_soc);
+    tcp_socket[tcpcom_soc].used=0;
+    tcpcom_soc = 0xff;
+  }
+#endif
+#ifdef SENDMAIL_MODULE
+  // break sendmail connection
+  if(tcp_cli.state != TCPC_IDLE)
+    tcp_cli_rst_and_clear();
+#endif
 }
 
 int sys_http_show_sn(unsigned int id, unsigned char *dest)
@@ -250,6 +289,7 @@ const struct plink_s plink_format[] = {
     PLINK(s, sys_setup, filt_mask3),
     */
     PLINK(s, sys_setup, nf_disable), // 11.12.2014
+//  PLINK(s, sys_setup, powersaving), // 16.02.2015
 
     PLINK(s, sys_setup, trap_ip1),
     PLINK(s, sys_setup, trap_ip2),
@@ -300,8 +340,6 @@ unsigned sys_http_setup_get(unsigned pkt, unsigned more_data)
   char buf[1024];
   char *s = buf;
 
-  extern const unsigned int serial; // in boot.c @ 0x0ffc
-
   switch(more_data)
   {
   case 0:
@@ -339,6 +377,7 @@ unsigned sys_http_setup_get(unsigned pkt, unsigned more_data)
     ///PDATA_MASK(s, sys_setup, filt_mask3);
 
     PDATA     (s, sys_setup, nf_disable); // 11.12.2014
+//  PDATA(s, sys_setup, powersaving); // 16.02.2015
 
     PDATA_IP  (s, sys_setup, trap_ip1);
     PDATA_IP  (s, sys_setup, trap_ip2);
@@ -358,7 +397,9 @@ unsigned sys_http_setup_get(unsigned pkt, unsigned more_data)
     return 2;
 
   case 2:
+#if HTTP_INPUT_DATA_SIZE<2400
 #warning "Attn! big POST in settings.html, req array in http2.c has to be 2400 bytes or so!"
+#endif
     PDATA_PASC_STR(s, sys_setup, hostname),
     PDATA_PASC_STR(s, sys_setup, location),
     PDATA_PASC_STR(s, sys_setup, contact),
@@ -375,11 +416,7 @@ unsigned sys_http_setup_get(unsigned pkt, unsigned more_data)
 #endif
     --s; // del last ','
     *s++ = '}'; *s++ = ';';
-
-#ifdef NTP_MODULE
     s += sprintf(s, "data_rtc=%u;", (unsigned)(local_time >> 32) - (unsigned)TIMEBASE_DIFF );
-#endif
-
     s += sprintf(s, "uptime_100ms=%u;", sys_clock_100ms);
     tcp_put_tx_body(pkt, (unsigned char*)buf, s - buf);
     return 0;
@@ -391,26 +428,27 @@ unsigned sys_http_setup_get(unsigned pkt, unsigned more_data)
 
 unsigned sys_http_devname_get(unsigned pkt, unsigned more)
 {
-  char buf[256];
-  int n;
+  char buf[384];
+  char *s = buf;
   sys_setup.hostname[sizeof sys_setup.hostname-1] = 0; // zterm prot-n
   sys_setup.location[sizeof sys_setup.location-1] = 0;
-  n = sprintf(buf, "var devname='%s';\n"
+  s += sprintf(s, "var devname='%s';\n"
         "var fwver='v%u.%u.%u.%c-%u';\n"
         "var hwmodel=%u;"
         "var hwver=%u;"
         "var nf_disable=%u;" // 11.12.2014
         "var sys_name=\"%s\";"
-        "var sys_location=\"%s\";",
+        "var sys_location=\"",
         device_name,
         PROJECT_MODEL, PROJECT_VER, PROJECT_BUILD, PROJECT_CHAR, PROJECT_ASSM,
         PROJECT_MODEL,
         proj_hardware_detect(),
         sys_setup.nf_disable, // 11.12.2014
-        sys_setup.hostname + 1,
-        sys_setup.location + 1
+        sys_setup.hostname + 1 // hostname need no escaping
         );
-  tcp_put_tx_body(pkt, (unsigned char*)buf, n);
+  s += str_escape_for_js_string(s, (char*)sys_setup.location + 1, 64);
+  *s++ = '"'; *s++ = ';';
+  tcp_put_tx_body(pkt, (void*)buf, s - buf);
   return 0;
 }
 
@@ -503,7 +541,11 @@ HOOK_CGI(newserial, (void*)sys_http_serial_set, mime_js,  HTML_FLG_POST );
 
 void sys_setup_reset(void)
 {
-  extern const unsigned int serial; // in boot.c @ 0x0ffc
+#if PROJECT_CHAR == 'E'
+  log_printf("System settings will be reset to defaults!");
+#else
+  log_printf("Выполняется сброс настроек прибора к начальному стостоянию!");
+#endif
   unsigned cpsr = proj_disable_interrupt();
   #define ss sys_setup
   util_fill((void*)&sys_setup, sizeof sys_setup, 0);
@@ -511,13 +553,16 @@ void sys_setup_reset(void)
   ss.ip[0] = 192; ss.ip[1] = 168; ss.ip[2] = 0; ss.ip[3] = 100;
   ss.mask = 24;
   ss.http_port = 80;
-  util_cpy((void*)"\x05visor", ss.uname, 1+5);    // double-check both lengths!
-  util_cpy((void*)"\x04ping",  ss.passwd, 1+4); // double-check both lengths!
-  util_cpy((void*)"\x06SWITCH", (void*)ss.community_r, 1+6);
-  util_cpy((void*)"\x06SWITCH", (void*)ss.community_w, 1+6);
+  memcpy(ss.uname,  "\x05visor", 1+5);    // double-check both lengths!
+  memcpy(ss.passwd, "\x04ping",  1+4); // double-check both lengths!
+  memcpy(ss.community_r, "\x06SWITCH", 1+6);
+  memcpy(ss.community_w, "\x06SWITCH", 1+6);
   ss.timezone = 3;   // MSK
   ss.facility = 16;  // 16 = local use 0
   ss.severity = 5;   // 5 = notice: normal but significant condition
+#ifdef DNS_MODULE
+  memcpy(ss.ntp_hostname1, (void*)"\x0Entp.netping.ru", 1+14); // 12.11.2014
+#endif
   EEPROM_WRITE(&eeprom_sys_setup, &ss, sizeof ss);
   EEPROM_WRITE(&eeprom_sys_setup_signature, &sys_setup_sign, 4);
   #undef ss
@@ -643,7 +688,7 @@ __monitor void blink_parameters_reset(void) // DKST 160.1.4
   PWM1MCR = 0; // disable any match action
   PWM1PR = SYSTEM_CCLK / 5; // PCLK = CCLK = 44 236 800 Hz -> PWM clock ~ 2.5Hz
   PWM1TCR = 1; // enable count in Timer mode
-  IO0CLR = 1<<16;
+  FIO0CLR = 1<<16;
   while(PWM1TC < 7*5)
   {
     led_control(CPU_LED_N, PWM1TC&1);

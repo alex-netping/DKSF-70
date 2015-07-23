@@ -31,7 +31,7 @@ box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
 visibility:hidden;
 }
 caption {caption-side:bottom;}
-#edt td,th {text-align:center;}
+#edt td, #edt th {text-align:center;}
 #edt td {min-width:80px;}
 #ediv h2 {margin-top:0px;}
 </style>
@@ -83,8 +83,8 @@ function pack(fmt, data) {
   switch(typeof x) 
   {
   case 'string':
-   x=x.replace(/\"/g,''); // 20.09.2010, remove quotes
-   l=x.length; if(l>f.len-1) l=f.len-1;
+   //x=x.replace(/\"/g,''); // 3.06.2015 quotes escaped in C code; data assigned via DOM
+   l=x.length; if(l>f.len-2) l=f.len-2;
    d[f.offs]=hexb(l);
    for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
    break;
@@ -141,7 +141,7 @@ function send_forced_reset(n,onoff)
 <h2>Реле</h2>
 -->
 <table id="edt_x_ref">
-<caption class="send_button">
+<caption class="send_button_container">
 <div id="error" class="alert" style="float:left;visibility:hidden;">Автоматическое обновление информации не работает! Нажмите F5 для обновления статуса.</div>
 <div style="float:right"><input type="button" value="Применить изменения" onclick="chkfrm()"/></div>
 <div style="clear:both"></div>
@@ -214,7 +214,7 @@ if(typeof(window.EventSource)=='undefined' || devname.indexOf('Test')!=-1)
 else
 {
  var sse=new EventSource("/sse.cgi");
- sse.addEventListener('relay_state', function (e) { alive(); window.data_status=parseInt(e.data); show_relay_status(); }, false);
+ sse.addEventListener('relay_state', function (e) { alive(); window.data_status=e.data*1; show_relay_status(); }, false);
  sse.addEventListener('sse_ping', alive, false);
  alive();
 }
@@ -291,7 +291,7 @@ function save_notif(y)
 <form name="notif_frm">
 <h2>Уведомления для реле&nbsp;<span id="notif_ch">0</span></h2>
 <table id="edt">
-<caption class="send_button">
+<caption class="send_button_container">
 <input type="button" value="Отменить изменения" onclick="save_notif(0)"/>
 <input type="button" value="Сохранить изменения" onclick="save_notif(1)"/>
 </caption>
@@ -322,7 +322,7 @@ function save_notif(y)
 <td><input type="checkbox" name="nf_syslog0"/></td>
 <td><input type="checkbox" name="nf_email0"/></td>
 <td><input type="checkbox" name="nf_sms0"/></td>
-<td><input type="checkbox" name="nf_trap0"/></td>
+<td><input type="checkbox" name="nf_trap0" disabled=""/></td>
 </tr>
 
 <tr>

@@ -22,7 +22,8 @@ l+=[
 '<a href="com.html">COM Порт</a>',
 '<a href="ow.html">1-Wire</a>',
 '<a href="termo.html">Термодатчики</a>',
-'<a href="rh.html">Датчик влажности</a>',
+'<a href="rh.html">Датчики влажности</a>',
+'<a href="pwrmon.html">Мониторинг 220V</a>',
 '<a href="update.html">Прошивка</a>',
 '<a href="log.html">Журнал</a>'
 ].join(' | ')+'<br/>';
@@ -35,7 +36,8 @@ l+=[
 '<a href="sendmail.html">e-mail</a>',
 '<a href="ow.html">1-Wire</a>',
 '<a href="termo.html">Термодатчики</a>',
-'<a href="rh.html">Датчик влажности</a>',
+'<a href="rh.html">Датчики влажности</a>',
+'<a href="pwrmon.html">Мониторинг 220V</a>',
 '<a href="update.html">Прошивка</a>',
 '<a href="log.html">Журнал</a>'
 ].join(' | ')+'<br/>';
@@ -45,7 +47,8 @@ l+=[
 '<a href="relay.html">Управление реле</a>',
 '<a href="wdog.html">Сторож</a>',
 '<a href="wtimer.html">Расписание</a>',
-'<a href="curdet.html">Датчик дыма</a>',
+'<a href="curdet.html">Ан. Датчик дыма</a>',
+'<a href="smoke.html">1W Датчики дыма</a>',
 '<a href="ir.html">ИК команды</a>',
 '<a href="logic.html">Логика</a>'
 ].join(' | ');

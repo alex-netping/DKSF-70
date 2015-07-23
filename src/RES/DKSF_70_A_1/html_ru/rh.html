@@ -7,8 +7,8 @@
 <!--<script src="menu.js"></script>-->
 <script src="relhum_get.cgi"></script>
 <style>
-form {max-width:900px;}
-input[type="text"],input[type="button"] {width:180px;}
+form {max-width:1100px;}
+input[type="text"],input[type="button"],output {width:180px;}
 caption {caption-side:bottom;}
 .edtdiv {
 position: absolute;
@@ -16,14 +16,16 @@ z-index:100;
 border: solid 1px green;
 background-color: white;
 padding:25px;
-left:100;
-top:100;
+left:100px;
+top:100px;
 box-shadow: 15px 15px 20px rgba(0,0,0,0.3);
 visibility:hidden;
 }
-#edt td,th {text-align:center;}
+#edt td:first-child, #edt th:first-child {width:auto;}
+#edt td:not(:first-child), #edt th:not(:first-child) {text-align:center;}
 #edt td {min-width:80px;}
 #ediv h2 {margin-top:0px;}
+tr.suffixes td {padding-top:15px;}
 </style>
 </head>
 <body>
@@ -34,6 +36,9 @@ var devname='NetPing Test';
 data={ow_addr:'285f 72e5 0000 0032', rh_value:50,t_value:26,status:0, rh_high:80, rh_low:20, flags:3};
 ///
 */
+
+var status_txt=['отказ','ниже нормы','в норме','выше нормы'];
+
 menu('Датчик относительной влажности');
 
 function getid(a) { return document.getElementById(a); }
@@ -71,7 +76,7 @@ function pack(fmt, data) {
   {
   case 'string':
    x=x.replace(/\"/g,''); // 22.03.2011, remove quotes  
-   l=x.length; if(l>f.len-1) l=f.len-1;
+   l=x.length; if(l>f.len-2) l=f.len-2;
    d[f.offs]=hexb(l);
    for(n=0;n<l;++n) d[f.offs+n+1]=hexb(w1251(x.charCodeAt(n)));
    break;
@@ -115,68 +120,64 @@ function chk_ow_addr(f)
 
 function chkfrm() 
 {
- var d={},f=document.frm;
- d.ow_addr=f.ow_addr?chk_ow_addr(f.ow_addr):[0,0,0,0,0,0,0,0];
- d.rh_high=range(f.rh_high,0,100);
- d.rh_low=range(f.rh_low,0,100);
- if(d.rh_high-d.rh_low<4) 
- {  
-  seterr(f.rh_high,true);
-  seterr(f.rh_low,true);
-  alert('Верхняя граница диапазона нормы должна быть выше нижней минимум на 4 проц.пункта!');
-  throw(0);
+ var n,d={},f=document.frm,s='';
+ for(n in data)
+ {
+  d.name=f._name[n].value;
+  d.ow_addr=f.ow_addr[n]?chk_ow_addr(f.ow_addr[n]):[0,0,0,0,0,0,0,0];
+  d.rh_high=range(f.rh_high[n],0,100);
+  d.rh_low=range(f.rh_low[n],0,100);
+  if(d.rh_high-d.rh_low<4) 
+  {  
+   seterr(f.rh_high[n],true);
+   seterr(f.rh_low[n],true);
+   alert('Верхняя граница диапазона нормы должна быть выше нижней минимум на 4 проц.пункта!');
+   throw(0);
+  }
+  d.t_high=range(f.t_high[n],-127,127);
+  d.t_low=range(f.t_low[n],-127,127);
+  if(d.t_high-d.t_low<4) 
+  {  
+   seterr(f.t_high[n],true);
+   seterr(f.t_low[n],true);
+   alert('Верхняя граница диапазона нормы должна быть выше нижней минимум на 4&deg;C!');
+   throw(0);
+  }  
+  s+=pack(packfmt,d);
  }
- d.flags=data.flags; // pass as is
- sender.data.value=pack(packfmt,d);;
+ sender.data.value=s;
  sender.submit();
  return false;
 }
 
-var req=new XMLHttpRequest();
-var reqtimer;
-var watchtimer;
-
-function no_responce()
-{
- clearInterval(watchtimer);
- req.abort();
- getid('error').style.visibility="visible";
-}
-
-function responce()
-{
- var d,i,err=getid('error').style;
- clearTimeout(reqtimer);
- clearInterval(watchtimer);
- d=req.responseText;
- if(req.status!=200 || !d || d=='') { err.visibility="visible"; return; }
- err.visibility="hidden";
- d=eval(d);
- getid('status').innerHTML=['датчик не работает','ниже нормы','в пределах нормы','выше нормы'][d.rh_status_h];
- getid('rh_value').innerHTML=d.rh_value+'&nbsp;%';
- getid('t_value').innerHTML=((d.t_value_100/100.0).toFixed(1))+'&deg;C';
- var dp;
- if(d.status==1) dp='-';
- else
- {
- dp=dewpoint(d.t_value,d.rh_value/100.0);
- if((!isNaN(dp)) && dp > -100 && dp < 100)
-   dp=Math.round(dp)+'&deg;C';
- else
-   dp='-';
- }
- getid('t_dew').innerHTML=dp;
-}
-
-function watch() {if(req.readyState==4) responce();}
-
 function monitor()
 {
- req.abort();
+ req=new XMLHttpRequest();
  req.open("GET","/rh_stat_get.cgi",true);
+ req.timeout=4000;
+ req.onerror=req.onabort=req.ontimeout=function()
+ { 
+  getid('error').style.visiblity='visible'; 
+ }
+ req.onload=function()
+ {
+  var n,d=eval(this.responseText),dp,dpt;
+  for(n in d)
+  {
+   frm.rh[n].value=d[n].rh+'%';
+   frm.rh_status[n].value=status_txt[d[n].rh_status];
+   frm.t[n].value=d[n].t+'\u2103';
+   frm.t_status[n].value=status_txt[d[n].t_status];
+   dpt='-';
+   if(d[n].rh_status && d[n].t<60)
+   {
+    dp=dewpoint(d[n].t,d[n].rh/100);
+    dpt=Math.round(dp)+'\u2103';
+   }
+   frm.dewpoint[n].value=dpt;
+  }
+ }
  req.send(null);
- reqtimer=setTimeout(no_responce,5990);
- watchtimer=setInterval(watch,200);
 }
 
 function dewpoint(t,rh)
@@ -191,44 +192,48 @@ function dewpoint(t,rh)
 <div id="middle">
 <div id="push_margin" style="height:1px"></div>
 <form name="frm" id="idfrm" method="post" action="error.html">
-<table id="table">
+<table id="edt_x_ref" class="paramtable">
 <caption class="send_button_container">
 <div id="error" class="alert" style="float:left;visibility:hidden;">Нет связи с устройством! Данные устарели!</div>
 <div style="float:right"><input type="button" value="Применить изменения" onclick="chkfrm()"/></div>
 <div style="clear:both"></div>
 </caption>
 <tr>
-<td class="parname">Уникальный номер 1W датчика</td>
-<td class="parinput"><input type="text" name="ow_addr" /></td>
-</tr>
+<td>Памятка
+<td><input type="text" maxlength="30" name="_name" style="color:#009020"/>
 <tr>
-<td class="parname">Статус датчика</td>
-<td id="status" class="parinput">&nbsp;</td>
-</tr>
+<td>Уникальный номер 1W датчика
+<td><input type="text" name="ow_addr"/>
 <tr>
-<td class="parname">Относительная влажность</td>
-<td id="rh_value" class="parinput">&nbsp;</td>
-</tr>
+<td>Относительная влажность
+<td><output name="rh"/>
 <tr>
-<td class="parname">Температура</td>
-<td id="t_value" class="parinput">&nbsp;</td>
-</tr>
+<td>Статус влажности
+<td><output name="rh_status"/>
 <tr>
-<td class="parname">Точка росы</td>
-<td id="t_dew" class="parinput">&nbsp;</td>
-</tr>
+<td>Температура
+<td><output name="t"/>
 <tr>
-<td class="parname">Верхняя граница диапазона нормальной влажности</td>
-<td name="high" class="parinput"><input type="text" name="rh_high" /></td>
-</tr>
+<td>Статус температуры
+<td><output name="t_status"/>
 <tr>
-<td class="parname">Нижняя граница диапазона нормальной влажности</td>
-<td name="high" class="parinput"><input type="text" name="rh_low" /></td>
-</tr>
+<td>Верхняя граница диапазона нормальной влажности, %
+<td name="high"><input type="text" name="rh_high" />
 <tr>
-<td class="parname">Уведомления при смене статуса датчика</td>
-<td class="parinput"><input type="button" name="notif_butt" value="Настроить" onclick="edit_notif()"/></td>
-</tr>
+<td>Нижняя граница диапазона нормальной влажности, %
+<td name="high"><input type="text" name="rh_low" />
+<tr>
+<td>Верхняя граница диапазона нормальной температуры, &deg;C
+<td name="high"><input type="text" name="t_high" />
+<tr>
+<td>Нижняя граница диапазона нормальной температуры, &deg;C
+<td name="high"><input type="text" name="t_low" />
+<tr>
+<td>Уведомления
+<td><input type="button" name="notif_t_butt" value="Настроить" onclick="edit_notif(this)"/>
+<tr>
+<td>Точка росы
+<td><output name="dewpoint"/>
 </table>
 </form>
 
@@ -237,15 +242,38 @@ function dewpoint(t,rh)
 </form>
 
 <script>
-if(typeof document.frm.ow_addr != 'undefined') 
- document.frm.ow_addr.value=data.ow_addr;
-document.frm.rh_high.value=data.rh_high;
-document.frm.rh_low.value=data.rh_low;
-monitor();
-setInterval(monitor,10000);
-</script>
+function expand_table(table_container, n_ch)
+{
+ var mch=/_ch_/g, mch1=/_ch1_/g;
+ var rn,r,n,t,table=table_container.children[0];
+ for(rn=0;rn<table.rows.length;++rn)
+ {
+  r=table.rows[rn];
+  for(n=1;n<n_ch;n++)
+   r.appendChild(r.cells[1].cloneNode(true));
+ }
+ t=table_container.innerHTML;
+ n=0; t=t.replace(mch, function(){return n++ % n_ch;} );
+ n=0; t=t.replace(mch1, function(){return n++ % n_ch + 1;} );
+ table_container.innerHTML=t;
+}
 
-<script>
+expand_table(getid('idfrm'),4);
+var d,f=document.frm;
+for(n in data)
+{
+d=data[n];
+f._name[n].value=d.name;
+f.ow_addr[n].value=d.ow_addr;
+f.rh_high[n].value=d.rh_high;
+f.rh_low[n].value=d.rh_low;
+f.t_high[n].value=d.t_high;
+f.t_low[n].value=d.t_low;
+}
+monitor();
+setInterval(monitor,12000);
+
+
 function set_nf_cb(ev,msk)
 {
  f=document.notif_frm;
@@ -268,22 +296,29 @@ function get_nf_cb_hex(ev)
  return hexb(msk,2);
 }
 
-function edit_notif()
+function edit_notif(obj)
 {
  if(getid('ediv').style.visibility=='visible') return;
+ var ch=obj.parentNode.cellIndex-1;
+ getid('notif_ch').innerHTML=ch+1; 
  var rq=new XMLHttpRequest();
- rq.open("GET","/notify_get.cgi?nfid=0300",false);//rel.hum.
+ rq.open("GET",'/notify_get.cgi?nfid=03'+hexb(ch),false);//rel.hum.
  rq.send(null);
  var d=rq.responseText;
  if(rq.readyState!=4 || rq.status!=200 || d=='error' || d=='') return;
  d=eval(d);
- set_nf_cb('3',d.high);
- set_nf_cb('2',d.norm);
- set_nf_cb('1',d.low);
+ set_nf_cb('6',d.t_high);
+ set_nf_cb('5',d.t_norm);
+ set_nf_cb('4',d.t_low); 
+ set_nf_cb('3',d.h_high);
+ set_nf_cb('2',d.h_norm);
+ set_nf_cb('1',d.h_low);
  set_nf_cb('0',d.fail);
  set_nf_cb('_r',d.report);
- x=getid('table').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
- y=document.frm.notif_butt.getBoundingClientRect().bottom - 120;
+ notif_frm.nf_suffix_evt.checked=d.flags&1;
+ notif_frm.nf_suffix_ch.checked=d.flags&2;
+ x=getid('edt_x_ref').scrollWidth/2 - getid('ediv').scrollWidth/2; if(x<20) x=20;
+ y=obj.offsetTop+120;
  getid('ediv').style.top=y+'px';
  getid('ediv').style.left=x+'px'; 
  getid('ediv').style.visibility='visible';
@@ -301,16 +336,23 @@ function save_notif(y)
  else
  {
   svrq.abort();
-  var d='data=0300';//rel.hum.
+  var d='data=03'+hexb(getid('notif_ch').innerHTML*1-1);//rel.hum.
   d+=get_nf_cb_hex('3');
   d+=get_nf_cb_hex('2');
   d+=get_nf_cb_hex('1');
   d+=get_nf_cb_hex('0');  
   d+=get_nf_cb_hex('_r');
-  svrq.onreadystatechange = function() 
+  d+=get_nf_cb_hex('6');
+  d+=get_nf_cb_hex('5');
+  d+=get_nf_cb_hex('4');
+  var flg=0;
+  if(notif_frm.nf_suffix_evt.checked) flg|=1;
+  if(notif_frm.nf_suffix_ch.checked) flg|=2;
+  d+=hexb(flg);
+  d+='00'+'000000000000';
+  svrq.onload = function() 
   {
-   if(svrq.readyState==4 && svrq.status==200)
-    getid('ediv').style.visibility='hidden';
+   getid('ediv').style.visibility='hidden';
   }     
   svrq.open("POST","/notify_set.cgi",true);
   svrq.send(d);
@@ -320,8 +362,8 @@ function save_notif(y)
 
 <div id="ediv" class="edtdiv">
 <form name="notif_frm">
-<h2>Уведомления для датчика влажности</h2>
-<table id="edt">
+<h2>Уведомления для датчика влажности <span id="notif_ch"></span></h2>
+<table id="edt" class="paramtable">
 <caption class="send_button_container">
 <input type="button" style="width:180px" value="Отменить изменения" onclick="save_notif(0)"/>
 <input type="button" style="width:180px" value="Сохранить изменения" onclick="save_notif(1)"/>
@@ -334,54 +376,81 @@ function save_notif(y)
 <th>E-mail</th>
 <th>SMS</th>
 <th>SNMP Trap</th>
-</tr>
 
 <tr>
-<td style="text-align:left">Влажность выше нормы</td>
-<td><input type="checkbox" name="nf_log3"/></td>
-<td><input type="checkbox" name="nf_syslog3"/></td>
-<td><input type="checkbox" name="nf_email3"/></td>
-<td><input type="checkbox" name="nf_sms3"/></td>
-<td><input type="checkbox" name="nf_trap3"/></td>
-</tr>
+<td>Влажность выше нормы</td>
+<td><input type="checkbox" name="nf_log3"/>
+<td><input type="checkbox" name="nf_syslog3"/>
+<td><input type="checkbox" name="nf_email3"/>
+<td><input type="checkbox" name="nf_sms3"/>
+<td><input type="checkbox" name="nf_trap3"/>
 
 <tr>
-<td style="text-align:left">Влажность в норме</td>
-<td><input type="checkbox" name="nf_log2"/></td>
-<td><input type="checkbox" name="nf_syslog2"/></td>
-<td><input type="checkbox" name="nf_email2"/></td>
-<td><input type="checkbox" name="nf_sms2"/></td>
-<td><input type="checkbox" name="nf_trap2"/></td>
-</tr>
+<td>Влажность в норме</td>
+<td><input type="checkbox" name="nf_log2"/>
+<td><input type="checkbox" name="nf_syslog2"/>
+<td><input type="checkbox" name="nf_email2"/>
+<td><input type="checkbox" name="nf_sms2"/>
+<td><input type="checkbox" name="nf_trap2"/>
 
 <tr>
-<td style="text-align:left">Влажность ниже нормы</td>
-<td><input type="checkbox" name="nf_log1"/></td>
-<td><input type="checkbox" name="nf_syslog1"/></td>
-<td><input type="checkbox" name="nf_email1"/></td>
-<td><input type="checkbox" name="nf_sms1"/></td>
-<td><input type="checkbox" name="nf_trap1"/></td>
-</tr>
+<td>Влажность ниже нормы</td>
+<td><input type="checkbox" name="nf_log1"/>
+<td><input type="checkbox" name="nf_syslog1"/>
+<td><input type="checkbox" name="nf_email1"/>
+<td><input type="checkbox" name="nf_sms1"/>
+<td><input type="checkbox" name="nf_trap1"/>
 
 <tr>
-<td style="text-align:left">Отказ датчика</td>
-<td><input type="checkbox" name="nf_log0"/></td>
-<td><input type="checkbox" name="nf_syslog0"/></td>
-<td><input type="checkbox" name="nf_email0"/></td>
-<td><input type="checkbox" name="nf_sms0"/></td>
-<td><input type="checkbox" name="nf_trap0"/></td>
-</tr>
+<td>Температура выше нормы</td>
+<td><input type="checkbox" name="nf_log6"/>
+<td><input type="checkbox" name="nf_syslog6"/>
+<td><input type="checkbox" name="nf_email6"/>
+<td><input type="checkbox" name="nf_sms6"/>
+<td><input type="checkbox" name="nf_trap6"/>
 
 <tr>
-<td style="text-align:left">Периодический отчёт</td>
-<td><input type="checkbox" name="nf_log_r" disabled=""/></td>
-<td><input type="checkbox" name="nf_syslog_r" disabled=""/></td>
-<td><input type="checkbox" name="nf_email_r"/></td>
-<td><input type="checkbox" name="nf_sms_r"/></td>
-<td><input type="checkbox" name="nf_trap_r" disabled=""/></td>
-</tr>
+<td>Температура в норме</td>
+<td><input type="checkbox" name="nf_log5"/>
+<td><input type="checkbox" name="nf_syslog5"/>
+<td><input type="checkbox" name="nf_email5"/>
+<td><input type="checkbox" name="nf_sms5"/>
+<td><input type="checkbox" name="nf_trap5"/>
+
+<tr>
+<td>Температура ниже нормы</td>
+<td><input type="checkbox" name="nf_log4"/>
+<td><input type="checkbox" name="nf_syslog4"/>
+<td><input type="checkbox" name="nf_email4"/>
+<td><input type="checkbox" name="nf_sms4"/>
+<td><input type="checkbox" name="nf_trap4"/>
+
+<tr>
+<td>Отказ/восстановление датчика</td>
+<td><input type="checkbox" name="nf_log0"/>
+<td><input type="checkbox" name="nf_syslog0"/>
+<td><input type="checkbox" name="nf_email0"/>
+<td><input type="checkbox" name="nf_sms0"/>
+<td><input type="checkbox" name="nf_trap0"/>
+
+<tr>
+<td>Периодический отчёт</td>
+<td><input type="checkbox" name="nf_log_r" disabled=""/>
+<td><input type="checkbox" name="nf_syslog_r" disabled=""/>
+<td><input type="checkbox" name="nf_email_r"/>
+<td><input type="checkbox" name="nf_sms_r"/>
+<td><input type="checkbox" name="nf_trap_r" disabled=""/>
+
+<tr class="suffixes">
+<td colspan="5">Использовать общий snmpTrapOID для всех событий</td>
+<td><input type="checkbox" name="nf_suffix_evt"/>
+
+<tr>
+<td colspan="5">Использовать общий snmpTrapOID для всех каналов</td>
+<td><input type="checkbox" name="nf_suffix_ch"/>
 
 </table>
+
 </form> <!--notif_frm-->
 </div><!--ediv-->
 

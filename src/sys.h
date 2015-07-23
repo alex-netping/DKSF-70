@@ -31,7 +31,8 @@ struct sys_setup_s {
   unsigned char filt_mask3;
   */
   unsigned char nf_disable;    // 11.12.2014 dksf 70; repurposed field; no need for init
-  unsigned char reserved[9];   // 11.12.2014 dksf 70
+  unsigned char powersaving;   // 16.02.2015; inital default value is 0 by sys_setup clear
+  unsigned char reserved[8];   // 16.02.2015 9->8
 
   unsigned char trap_ip1[4];
   unsigned char trap_ip2[4];
@@ -76,6 +77,7 @@ void set_sn(unsigned char *sn);
 void set_mac(unsigned char *mac);
 void set_ip(unsigned char *ip);
 void reload_proc(void);
+void soft_reboot(void);
 //void reboot_proc(void); // moved to project.c
 //int  sys_http_show_sn(unsigned int id, unsigned char *dest);
 
