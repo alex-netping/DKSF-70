@@ -1902,6 +1902,9 @@
       <name>$PROJ_DIR$\DEF\pwr2_def.h</name>
     </file>
     <file>
+      <name>$PROJ_DIR$\DEF\pwrmon_def.h</name>
+    </file>
+    <file>
       <name>$PROJ_DIR$\DEF\relay_uniping_def.h</name>
     </file>
     <file>
@@ -1912,6 +1915,9 @@
     </file>
     <file>
       <name>$PROJ_DIR$\DEF\sendmail_def.h</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\DEF\smoke_def.h</name>
     </file>
     <file>
       <name>$PROJ_DIR$\DEF\sms_def.h</name>
@@ -2259,6 +2265,9 @@
       <name>$PROJ_DIR$\PING\ping.c</name>
     </file>
     <file>
+      <name>$PROJ_DIR$\PWRMON\pwrmon.c</name>
+    </file>
+    <file>
       <name>$PROJ_DIR$\RELAY\relay_uniping.c</name>
     </file>
     <file>
@@ -2269,6 +2278,9 @@
     </file>
     <file>
       <name>$PROJ_DIR$\SENDMAIL\sendmail.c</name>
+    </file>
+    <file>
+      <name>$PROJ_DIR$\SMOKE\smoke.c</name>
     </file>
     <file>
       <name>$PROJ_DIR$\SMS\sms.c</name>

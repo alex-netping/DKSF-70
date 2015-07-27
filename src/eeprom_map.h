@@ -133,3 +133,4 @@ _extern __no_init unsigned                 eeprom_pwrmon_signature              
 _extern __no_init struct range_notify_s    eeprom_pwrmon_notify[PWRMON_MAX_CH]            @ 0xEE008C00;
 _extern __no_init struct pwrmon_setup_s    eeprom_pwrmon_setup[PWRMON_MAX_CH]             @ 0xEE008D00;
 
+

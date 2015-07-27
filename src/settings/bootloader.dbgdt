@@ -43,7 +43,7 @@
           
           
           
-        <item>serial</item><item>~0U</item><item>bootldr_data</item><item></item></expressions>
+        <item>serial</item><item>~0U</item><item>bootldr_data</item><item/></expressions>
         <col-names>
           
           

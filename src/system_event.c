@@ -185,6 +185,7 @@ void init_modules(void)
   logic_init();
   ow_init();
   relhum_init();
+  pwrmon_init();
   sendmail_init();
   notify_init();
 }

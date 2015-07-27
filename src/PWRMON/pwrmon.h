@@ -48,6 +48,7 @@ extern struct pwrmon_setup_s pwrmon_setup[PWRMON_MAX_CH];
 
 extern const char pwrmon_msg_fail[];
 
+void pwrmon_init(void);
 void pwrmon_parse_setup_data_from_sensor(unsigned ch, unsigned char *buf);
 void pwrmon_parse_full_stats_from_sensor(unsigned ch, unsigned char *buf);
 void pwrmon_parse_short_stats_from_sensor(unsigned ch, unsigned char *buf);

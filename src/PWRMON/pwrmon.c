@@ -4,15 +4,18 @@ v1.0
 */
 
 #include "platform_setup.h"
+#include "eeprom_map.h"
 
 #ifdef PWRMON_MODULE
 
-#include "eeprom_map.h"
+//#include "eeprom_map.h"
 #include "plink.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 void pwrmon_set_comm_status(unsigned ch, int ok_flag);
+
+const unsigned pwrmon_signature = 0x7077726d; // 'pwrm'
 
 struct pwrmon_setup_s pwrmon_setup[PWRMON_MAX_CH];
 struct pwrmon_state_s pwrmon_state[PWRMON_MAX_CH];
@@ -52,6 +55,21 @@ const char *pwrmon_msg[7] = {
 };
 #endif
 
+void pwrmon_param_reset(void)
+{
+  memset(pwrmon_setup, 0, sizeof pwrmon_setup);
+
+  EEPROM_WRITE(&eeprom_pwrmon_setup, &pwrmon_setup, sizeof eeprom_pwrmon_setup);
+  EEPROM_WRITE(&eeprom_pwrmon_signature, &pwrmon_signature, sizeof eeprom_pwrmon_signature);
+}
+
+void pwrmon_init(void)
+{
+  unsigned sign;
+  EEPROM_READ(&eeprom_pwrmon_signature, &sign, sizeof sign);
+  if(sign != pwrmon_signature) pwrmon_param_reset();
+  EEPROM_READ(&eeprom_pwrmon_setup, &pwrmon_setup, sizeof pwrmon_setup);
+}
 
 unsigned pwrmon_http_get(unsigned pkt, unsigned more_data)
 {
