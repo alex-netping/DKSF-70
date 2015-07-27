@@ -8,10 +8,11 @@ v1.0
 
 #ifdef PWRMON_MODULE
 
-//#include "eeprom_map.h"
 #include "plink.h"
 #include <stdio.h>
 #include <stdlib.h>
+
+#define PWRMON_SENSOR_SETUP_DATALEN	26			// byte length of sensor setup registers
 
 void pwrmon_set_comm_status(unsigned ch, int ok_flag);
 
@@ -171,18 +172,26 @@ unsigned pwrmon_http_sensor_get(unsigned pkt, unsigned more_data)
 
 int pwrmon_http_sensor_set(void)
 {
-  const unsigned data_len_bytes = (char*)&pwrmon_state[0].t2_copy + 2 - (char*)&pwrmon_state[0].uv1;
+  const unsigned data_len_bytes = PWRMON_SENSOR_SETUP_DATALEN;
   unsigned ch;
 
-  if(strcmp(req_args, "ch=") != 0) goto error;
+  if (memcmp(req_args, "ch=", 3) != 0) 
+  	goto error;
+ 
   ch = atoi(req_args + 3);
-  if(ch == 0 || ch > PWRMON_MAX_CH) goto error;
+  if(ch == 0 || ch > PWRMON_MAX_CH) 
+  	goto error;
+  
   ch -= 1; // 1-based to 0-based
-  if(http.post_content_length != HTTP_POST_HDR_SIZE + data_len_bytes * 2) goto error;
+  if (http.post_content_length != (HTTP_POST_HDR_SIZE + (data_len_bytes * 2)))
+  	goto error;
+  
   http_post_data_part(req + HTTP_POST_HDR_SIZE, (void*)&pwrmon_state[ch].uv1, data_len_bytes);
+
   pwrmon_state[ch].write_sensor_setup = 1;
   http_reply(200, "");
   return 0;
+  
 error:
   http_reply(200, "internal error");
   return 0;

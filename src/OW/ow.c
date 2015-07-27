@@ -802,9 +802,9 @@ void ow_scan(void)
     ow_tx_buf[10] = 0; // Mem Addr
     ow_tx_buf[11] = 13 * 2; // Data Len
     memcpy(ow_tx_buf + 12, &pwrmon_state[ow_ch].uv1, 13 * 2);
-    crc16 = ow_crc16(0, ow_tx_buf, 38); // All command from the start
-    ow_tx_buf[38] = ~(crc16 & 0xff);
-    ow_tx_buf[39] = ~(crc16 >> 8); // crc16 transmitted inverted little endian, as required by 1w specs
+    crc16 = ow_crc16(0, &ow_tx_buf[12], (13 * 2)); 			// Data part only in the current version
+    ow_tx_buf[38] = (unsigned char)((crc16 >> 8) & 0xff);	// CRC16 txed high byte first, low byte next
+    ow_tx_buf[39] = (unsigned char)(crc16 & 0xff); 			// in the current version
     ow_start(40, 1);
     ow_state = OW_PMON_WRITE_CHK;
     break;
