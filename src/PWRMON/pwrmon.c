@@ -48,7 +48,7 @@ const char *pwrmon_msg[7] = {
   "sensor failed",
   "sensor is ok",
   "short undervoltage",
-  "sort overvoltage",
+  "short overvoltage",
   "long undervoltage",
   "long overvoltage",
   "blackout"
@@ -149,18 +149,20 @@ unsigned pwrmon_http_sensor_get(unsigned pkt, unsigned more_data)
   if(memcmp(req_args, "ch=", 3) != 0) return 0;
   unsigned ch1 = atoi(req_args + 3);
   if(ch1 == 0 || ch1 > PWRMON_MAX_CH) return 0;
-  struct pwrmon_state_s *st = &pwrmon_state[ch1 - 1];
+  //struct pwrmon_state_s *st = &pwrmon_state[ch1 - 1];
+  struct pwrmon_setup_s *su = &pwrmon_setup[ch1 - 1];
+  
   char buf[768];
   char *dest = buf;
   *dest++ = '('; *dest++ = '{';
   PDATA_PASC_STR(dest, pwrmon_setup[ch1 - 1], name);
-  PDATA(dest, *st, t1);
-  PDATA(dest, *st, uv1);
-  PDATA(dest, *st, ov1);
-  PDATA(dest, *st, t12);
-  PDATA(dest, *st, ov2);
-  PDATA(dest, *st, uv2);
-  PDATA(dest, *st, t2);
+  PDATA(dest, *su, t1);
+  PDATA(dest, *su, uv1);
+  PDATA(dest, *su, ov1);
+  PDATA(dest, *su, t12);
+  PDATA(dest, *su, ov2);
+  PDATA(dest, *su, uv2);
+  PDATA(dest, *su, t2);
   --dest; // remove last comma
   *dest++ = '}'; *dest++=')'; *dest++=';';
   tcp_put_tx_body(pkt, (unsigned char*)buf, dest - buf);
