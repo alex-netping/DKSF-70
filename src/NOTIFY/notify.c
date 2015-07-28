@@ -541,6 +541,8 @@ void notify_reset_params(void)
   memset(&curdet_notify, 0, sizeof curdet_notify);
   EEPROM_WRITE(&eeprom_curdet_notify, &curdet_notify, sizeof eeprom_curdet_notify);
 #endif // CUR_DET_MODULE
+  memset(&pwrmon_notify, 0, sizeof eeprom_pwrmon_notify);
+  EEPROM_WRITE(&eeprom_pwrmon_notify, &pwrmon_notify, sizeof eeprom_pwrmon_notify);
   EEPROM_WRITE(&eeprom_notify_signature, &notify_signature, sizeof eeprom_notify_signature);
 }
 
@@ -595,6 +597,8 @@ void notify_init(void)
     notify_smoke_reset_params();
   EEPROM_READ(&eeprom_smoke_notify, &smoke_notify, sizeof smoke_notify);
 #endif
+
+  EEPROM_READ(&eeprom_pwrmon_notify, &pwrmon_notify, sizeof pwrmon_notify);
 }
 
 void notify_event(enum event_e event)
