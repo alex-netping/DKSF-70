@@ -915,7 +915,7 @@ void ow_scan(void)
     pwrmon_state[ow_ch].refresh = 0; // reset flag, setup and full data now ready
     ow_state = OW_PMON_NEXT;
     break;
-  case OW_PMON_READ_SHORT:
+  case OW_PMON_READ_SHORT:	
     ow_tx_buf[0] = 0x55; // match ROM
     memcpy(ow_tx_buf + 1, pwrmon_setup[ow_ch].ow_addr, 8);
     ow_tx_buf[9] = 0x64; // Read Stats Short
@@ -926,9 +926,9 @@ void ow_scan(void)
     if(ow_error == 0)
     {
       crc16 = 0x0000;  // initial value
-      crc16 = ow_crc16(crc16, ow_rx_buf, 11);
+      crc16 = ow_crc16(crc16, &ow_rx_buf[1], 10);
       if (crc16 != (((ow_rx_buf[11 + 0] << 8) & 0xff00) | ow_rx_buf[11 + 1])) 
-        ow_error = 8;
+        ow_error = 8;		
     }
     if(ow_error)
     {
@@ -940,7 +940,7 @@ void ow_scan(void)
         ow_state = OW_PMON_NEXT;
       }
       break;
-    }
+    }	
     pwrmon_parse_short_stats_from_sensor(ow_ch, ow_rx_buf);
     ow_state = OW_PMON_NEXT;
     break;

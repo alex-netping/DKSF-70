@@ -306,10 +306,15 @@ unsigned pwrmon_chk_counter(unsigned *counter, unsigned char new_low_byte)
 
 void pwrmon_parse_short_stats_from_sensor(unsigned ch, unsigned char *buf)
 {
-  if(ch >= PWRMON_MAX_CH) return;  
-  if(buf[0] != 10) return; // check data len read from sensor
+  if(ch >= PWRMON_MAX_CH) 
+  	return; 
+  
+  if(buf[0] != 10) 
+  	return; // check data len read from sensor
+  
   struct pwrmon_state_s *st = &pwrmon_state[ch];
   struct range_notify_s *nf = &pwrmon_notify[ch];
+  
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt1uv, buf[2]), nf->low,  PWRMON_PROF1UV);
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt1ov, buf[3]), nf->low,  PWRMON_PROF1OV);
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt2uv, buf[4]), nf->norm, PWRMON_PROF2UV);
