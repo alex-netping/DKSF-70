@@ -84,7 +84,7 @@ unsigned pwrmon_http_get(unsigned pkt, unsigned more_data)
   dest += sprintf(dest, "}; var data=[");
   struct pwrmon_setup_s *su = &pwrmon_setup[more_data];
   struct pwrmon_state_s *st = &pwrmon_state[more_data];
-  int n;
+  int n;  
   for(n = more_data;; ++su, ++st)
   {
     *dest++ = '{';
@@ -321,7 +321,7 @@ void pwrmon_parse_short_stats_from_sensor(unsigned ch, unsigned char *buf)
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt2ov, buf[5]), nf->norm, PWRMON_PROF2OV);
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt3uv, buf[6]), nf->high, PWRMON_PROF3UV);
   st->v = buf[7]<<0 | buf[8]<<8;
-  st->f = buf[9]<<0 | buf[10]<<8;
+  st->f = buf[9]<<0 | buf[10]<<8;  
 }
 
 void pwrmon_set_comm_status(unsigned ch, int ok_flag)
@@ -332,6 +332,11 @@ void pwrmon_set_comm_status(unsigned ch, int ok_flag)
   pwrmon_state[ch].comm_status = ok_flag;
   if(!ok_flag)
   {
+  	// if sensor is disconnected or communication error
+  	// clear the current values of frequency and vrms (so correct values are sent to web)
+  	pwrmon_state[ch].f = 0;
+	pwrmon_state[ch].v = 0;
+	
     pwrmon_state[ch].write_sensor_setup = 0; // cancel writing
     pwrmon_state[ch].refresh = 1; // order re-reading of sensor setup and counters
     memset(&pwrmon_state[ch].uv1, 0, 13 * 2); // clear sensor setup data // unsafe!
