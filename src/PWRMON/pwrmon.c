@@ -21,9 +21,6 @@ const unsigned pwrmon_signature = 0x7077726d; // 'pwrm'
 struct pwrmon_setup_s pwrmon_setup[PWRMON_MAX_CH];
 struct pwrmon_state_s pwrmon_state[PWRMON_MAX_CH];
 
-char           pwrmon_sensor_setup_save_it; // flag to write setup data into sensor for ow.c
-unsigned short pwrmon_sensor_addr_and_setup[4+13]; // ow address (8 byte = 4 elements), then sensor profiles (13 elements)
-
 enum pwrmon_event_e {
   PWRMON_FAIL = 0,
   PWRMON_WORKING,
