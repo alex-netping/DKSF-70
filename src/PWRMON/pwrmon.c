@@ -103,30 +103,6 @@ unsigned pwrmon_http_get(unsigned pkt, unsigned more_data)
   return n;
 }
 
-unsigned pwrmon_http_get_cgi(unsigned pkt, unsigned more_data)
-{
-#warning TODO this
-#warning add HOOK for this
-  char buf[128];
-  struct relhum_state_s *st;
-
-  strcpy(buf, "relhum_result('error');");
-  unsigned ch = atoi(req_args + 1);
-  if(ch >= RELHUM_MAX_CH) goto end;
-  st = &relhum_state[ch];
-  if(req_args[0] == 'h')
-  {
-    sprintf(buf, "pwrmon_result('ok', %u, %u);", st->rh, st->rh_status);
-  }
-  else if(req_args[0] == 't')
-  {
-    sprintf(buf, "pwrmon_result('ok', %d, %u);", st->t, st->t_status);
-  }
-end:
-  tcp_put_tx_body(pkt, (unsigned char*)buf, strlen(buf));
-  return 0;
-}
-
 int pwrmon_http_set(void)
 {	
   http_post_data((void*)pwrmon_setup, sizeof pwrmon_setup);
