@@ -53,6 +53,10 @@ const char *pwrmon_msg[7] = {
 };
 #endif
 
+#ifdef PMON_DEBUG_STATS
+unsigned int pmon_stats[MAX_PMON_STATS] = {0,0,0,0,0,0,0,0,0};
+#endif
+
 void pwrmon_param_reset(void)
 {
   memset(pwrmon_setup, 0, sizeof pwrmon_setup);
@@ -67,12 +71,22 @@ void pwrmon_init(void)
   EEPROM_READ(&eeprom_pwrmon_signature, &sign, sizeof sign);
   if(sign != pwrmon_signature) pwrmon_param_reset();
   EEPROM_READ(&eeprom_pwrmon_setup, &pwrmon_setup, sizeof pwrmon_setup);
+
+  for(int n=0; n<PWRMON_MAX_CH; ++n)
+    pwrmon_state[n].refresh = 1;  
 }
 
 unsigned pwrmon_http_get(unsigned pkt, unsigned more_data)
 {
   char buf[768];
   char *dest = buf;
+
+  #ifdef PMON_DEBUG_STATS
+	log_printf("pmon stats %u %u %u %u %u %u %u %u %u",
+		pmon_stats[0], pmon_stats[1], pmon_stats[2], pmon_stats[3],
+		pmon_stats[4], pmon_stats[5], pmon_stats[6], pmon_stats[7],
+	  	pmon_stats[8]);
+  #endif
   
   dest += sprintf(dest,"var packfmt={");
   PLINK(dest, pwrmon_setup[0], name);
@@ -181,6 +195,10 @@ void pwrmon_parse_setup_data_from_sensor(unsigned ch, unsigned char *buf)
   
   if(ch >= PWRMON_MAX_CH) return;
   struct pwrmon_setup_s *su = &pwrmon_setup[ch];
+
+	#ifdef PMON_DEBUG_STATS
+	pmon_stats[PMON_PSETUP_OK]++;
+	#endif
 	
   pwrmon_set_comm_status(ch, 1);
   // copy useful data (truncated) to properly aligned word array
@@ -202,11 +220,21 @@ void pwrmon_parse_full_stats_from_sensor(unsigned ch, unsigned char *buf)
   const unsigned len = 26;
   if(buf[0] == len) // check data len read from sensor
   {
+	#ifdef PMON_DEBUG_STATS
+	pmon_stats[PMON_PFL_OK]++;
+	#endif
+
     memcpy(&pwrmon_state[ch].cnt1uv, buf + 1 + 2, (len-3)); // skip length and version, copy data	
     pwrmon_set_comm_status(ch, 1);
   }
   else
+  {
+  	#ifdef PMON_DEBUG_STATS
+	pmon_stats[PMON_ERR_RFL]++;
+	#endif
+  	
     pwrmon_set_comm_status(ch, 0);
+  }
 }
 
 unsigned char pwrmon_trap_oid[]=
@@ -278,7 +306,7 @@ unsigned pwrmon_chk_counter(unsigned *counter, unsigned char new_low_byte)
 }
 
 void pwrmon_parse_short_stats_from_sensor(unsigned ch, unsigned char *buf)
-{
+{	
   if(ch >= PWRMON_MAX_CH) 
   	return; 
   
@@ -287,6 +315,10 @@ void pwrmon_parse_short_stats_from_sensor(unsigned ch, unsigned char *buf)
   
   struct pwrmon_state_s *st = &pwrmon_state[ch];
   struct range_notify_s *nf = &pwrmon_notify[ch];
+
+	#ifdef PMON_DEBUG_STATS
+	pmon_stats[PMON_PSS_OK]++;
+	#endif
   
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt1uv, buf[2]), nf->low,  PWRMON_PROF1UV);
   pwrmon_send_notifications(ch, pwrmon_chk_counter(&st->cnt1ov, buf[3]), nf->low,  PWRMON_PROF1OV);

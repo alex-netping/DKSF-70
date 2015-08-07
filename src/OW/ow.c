@@ -815,6 +815,10 @@ void ow_scan(void)
         ow_state = OW_PMON_WRITE;
       else
       {
+	  	#ifdef PMON_DEBUG_STATS
+		pmon_stats[PMON_ERR_WR]++;
+		#endif
+		
         pwrmon_set_comm_status(ow_ch, 0);
         ow_state = OW_PMON_NEXT;
       }
@@ -839,6 +843,10 @@ void ow_scan(void)
         ow_state = OW_PMON_RESTART;
       else
       {
+	  	#ifdef PMON_DEBUG_STATS
+		pmon_stats[PMON_ERR_RST]++;
+		#endif
+		
         pwrmon_set_comm_status(ow_ch, 0);
         ow_state = OW_PMON_NEXT;
       }
@@ -873,6 +881,10 @@ void ow_scan(void)
         ow_state = OW_PMON_READ_SETUP;
       else
       {
+	  	#ifdef PMON_DEBUG_STATS
+		pmon_stats[PMON_ERR_RSETUP]++;
+		#endif
+
         pwrmon_set_comm_status(ow_ch, 0);
         ow_state = OW_PMON_NEXT;
       }
@@ -906,6 +918,10 @@ void ow_scan(void)
         ow_state = OW_PMON_READ_FULL;
       else
       {
+	  	#ifdef PMON_DEBUG_STATS
+		pmon_stats[PMON_ERR_RFULL]++;
+		#endif
+		
         pwrmon_set_comm_status(ow_ch, 0);
         ow_state = OW_PMON_NEXT;
       }
@@ -936,6 +952,10 @@ void ow_scan(void)
         ow_state = OW_PMON_READ_SHORT;
       else
       {
+	  	#ifdef PMON_DEBUG_STATS
+		pmon_stats[PMON_ERR_RS]++;
+		#endif
+		
         pwrmon_set_comm_status(ow_ch, 0);
         ow_state = OW_PMON_NEXT;
       }

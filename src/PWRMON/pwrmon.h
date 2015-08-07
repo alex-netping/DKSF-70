@@ -43,6 +43,24 @@ struct pwrmon_state_s {
   char write_sensor_setup; // flag: start saving of above sensor setup data into the sensor
 };
 
+// To enable collecting and printing pwrmon debug counters to log, uncomment
+//#define PMON_DEBUG_STATS
+
+#define MAX_PMON_STATS 		9
+#define PMON_ERR_WR			0
+#define PMON_ERR_RST		1
+#define PMON_ERR_RSETUP 	2
+#define PMON_ERR_RFULL		3
+#define PMON_ERR_RS			4
+#define PMON_ERR_RFL		5
+#define PMON_PSETUP_OK		6
+#define PMON_PFL_OK			7
+#define PMON_PSS_OK			8
+
+#ifdef PMON_DEBUG_STATS
+extern unsigned int pmon_stats[MAX_PMON_STATS];
+#endif
+
 extern struct pwrmon_state_s pwrmon_state[PWRMON_MAX_CH];
 extern struct pwrmon_setup_s pwrmon_setup[PWRMON_MAX_CH];
 
