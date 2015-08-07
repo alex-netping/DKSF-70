@@ -272,6 +272,8 @@ function edit_sensor(ch)
  dv.style.visibility='visible';
 }
 
+var nfreq=new XMLHttpRequest();
+
 function save_sensor(y)
 {
  if(!y)
@@ -280,7 +282,7 @@ function save_sensor(y)
  }
  else
  {
-  var req=new XMLHttpRequest();
+  nfreq.abort();
   var ch=getid('sensor_ch').innerHTML*1-1;
   var d={},f=document.sensor_frm;
   d.t1=range(f.t1,25,65000);
@@ -310,7 +312,7 @@ function save_sensor(y)
   t+=hexb(d.t2,2);
   nfreq.onload = function() 
   {
-   getid('ediv').style.visibility='hidden';
+  	getid('ediv_sensor').style.visibility='hidden'; 
   }     
   nfreq.open("POST","/pwrmon_sensor_set.cgi?ch="+(ch+1),true);
   nfreq.send(t);
