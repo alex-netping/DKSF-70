@@ -45,8 +45,8 @@
 //#define PROJECT_BUILD  4.5 // curdet and wtimer setup interference removed; at.html fix; updated assembly process
 //#define PROJECT_BUILD  4.6 // snmp community length bugfix; level legend to trap and sms; credentials lengh limited; RTC set on Enter; JSON string escaping; io.cgi?io4&mode=0/1/2; " : in text fields, http credentials
 //#define PROJECT_BUILD  4.7 // minor bugfix on QA; sendmail update (Date and #)
-#define PROJECT_BUILD  1 // not released yet; 220v sensors; 1w smoke; multi 1w RH
-#define PROJECT_CHAR   'B'
+#define PROJECT_BUILD  2 // not released yet; 220v sensors; 1w smoke; multi 1w RH
+#define PROJECT_CHAR   'R'
 #define PROJECT_ASSM   1
 
 #include <string.h>

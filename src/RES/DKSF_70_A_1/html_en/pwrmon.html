@@ -280,6 +280,7 @@ function save_sensor(y)
  }
  else
  {
+  nfreq.abort();
   var req=new XMLHttpRequest();
   var ch=getid('sensor_ch').innerHTML*1-1;
   var d={},f=document.sensor_frm;
@@ -310,7 +311,7 @@ function save_sensor(y)
   t+=hexb(d.t2,2);
   nfreq.onload = function() 
   {
-   getid('ediv').style.visibility='hidden';
+  	getid('ediv_sensor').style.visibility='hidden'; 
   }     
   nfreq.open("POST","/pwrmon_sensor_set.cgi?ch="+(ch+1),true);
   nfreq.send(t);
